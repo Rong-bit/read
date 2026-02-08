@@ -1,0 +1,7 @@
+{
+  "name": "Gemini 小說朗讀器",
+  "description": "一款由 AI 驅動的有聲小說閱讀軟體，利用 Gemini 的先進 TTS 與搜尋能力，自動擷取並朗讀線上小說內容。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
