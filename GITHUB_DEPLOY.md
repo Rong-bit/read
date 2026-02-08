@@ -6,7 +6,7 @@
 
 ### 步骤 1：启用 GitHub Pages
 
-1. 访问您的仓库：https://github.com/Rong-bit/read
+1. 访问您的仓库：https://github.com/Rong-bit/read-app
 2. 点击 **Settings**（设置）
 3. 在左侧菜单找到 **Pages**
 4. 在 **Source** 部分：
@@ -33,7 +33,7 @@ git push origin main
 
 部署完成后，您的网站地址将是：
 ```
-https://rong-bit.github.io/read/
+https://rong-bit.github.io/read-app/
 ```
 
 ## 方法二：手动部署（备选方案）
@@ -59,7 +59,7 @@ git commit -m "Deploy to GitHub Pages"
 
 # 创建 gh-pages 分支并推送
 git branch -M gh-pages
-git remote add origin https://github.com/Rong-bit/read.git
+git remote add origin https://github.com/Rong-bit/read-app.git
 git push -u origin gh-pages --force
 ```
 
@@ -82,7 +82,7 @@ Vercel 提供免费的自动部署，比 GitHub Pages 更简单：
 
 1. 点击 **Add New Project**
 2. 选择 **Import Git Repository**
-3. 选择 `Rong-bit/read` 仓库
+3. 选择 `Rong-bit/read-app` 仓库
 4. 点击 **Import**
 
 ### 步骤 3：配置项目
@@ -115,7 +115,7 @@ Vercel 会自动：
 
 1. 点击 **Add new site** > **Import an existing project**
 2. 选择 **GitHub**
-3. 授权并选择 `Rong-bit/read` 仓库
+3. 授权并选择 `Rong-bit/read-app` 仓库
 
 ### 步骤 3：配置构建设置
 

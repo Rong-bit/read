@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { NovelContent } from '../types';
+import { getSafeOpenUrl } from '../utils/urlUtils';
 
 interface NovelDisplayProps {
   novel: NovelContent | null;
@@ -32,6 +33,9 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
   }
 
   if (!novel || !novel.sourceUrl) return null;
+
+  const safeUrl = getSafeOpenUrl(novel.sourceUrl);
+  const hasValidUrl = !!safeUrl;
 
   const handleIframeError = () => {
     setIframeError(true);
@@ -83,12 +87,12 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
         </button>
       </div>
 
-      {/* Iframe 嵌入模式 */}
-      {viewMode === 'iframe' && !iframeError && (
+      {/* Iframe 嵌入模式：僅在網址有效時嵌入，避免 Safari 顯示「網址無效」 */}
+      {viewMode === 'iframe' && !iframeError && hasValidUrl && (
         <div className="mb-8">
           <div className="relative w-full h-[600px] md:h-[800px] rounded-2xl overflow-hidden border border-slate-700/50 bg-slate-900/50 shadow-2xl">
             <iframe
-              src={novel.sourceUrl}
+              src={safeUrl!}
               className="w-full h-full"
               title={novel.title || '小說閱讀'}
               onError={handleIframeError}
@@ -114,6 +118,17 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
           </p>
         </div>
       )}
+      {viewMode === 'iframe' && !iframeError && !hasValidUrl && (
+        <div className="mb-8 p-8 bg-amber-900/20 border border-amber-500/30 rounded-2xl text-center">
+          <p className="text-amber-400 mb-4">網址無效，無法內嵌。請使用「直接跳轉」或重新輸入正確網址。</p>
+          <button
+            onClick={() => setViewMode('link')}
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold"
+          >
+            切換為直接跳轉
+          </button>
+        </div>
+      )}
 
       {/* 直接跳轉模式 */}
       {viewMode === 'link' && (
@@ -131,10 +146,11 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
             </div>
             
             <a
-              href={novel.sourceUrl}
+              href={safeUrl ?? '#'}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
+              onClick={e => { if (!safeUrl) e.preventDefault(); }}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M7 17 17 7M7 7h10v10"/>

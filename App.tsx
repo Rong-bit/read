@@ -1,13 +1,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import Header from './components/Header';
-import Sidebar from './components/Sidebar';
-import NovelInput from './components/NovelInput';
-import NovelDisplay from './components/NovelDisplay';
-import AudioControls from './components/AudioControls';
+import Header from './components/header';
+import Sidebar from './components/sidebar';
+import NovelInput from './components/novelinput';
+import NovelDisplay from './components/noveldisplay';
+import AudioControls from './components/audiocontrols';
 import { NovelContent, ReaderState } from './types';
 import { fetchNovelContent, generateSpeech } from './services/geminiService';
 import { decode, decodeAudioData } from './utils/audioUtils';
+import { getSafeOpenUrl } from './utils/urlUtils';
 
 const STORAGE_KEY_SETTINGS = 'gemini_reader_settings';
 const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
@@ -127,19 +128,17 @@ const App: React.FC = () => {
 
   const handleNextChapter = () => {
     // 不再支持下一章功能，因為不抓取內容
-    // 用戶可以直接在網站上點擊下一章
-    if (novel?.sourceUrl) {
-      window.open(novel.sourceUrl, '_blank');
-    }
+    const url = novel?.sourceUrl ? getSafeOpenUrl(novel.sourceUrl) : null;
+    if (url) window.open(url, '_blank');
   };
 
   const playAudio = async () => {
     // 不再支持語音朗讀，因為不抓取內容
-    // 提示用戶前往官方網站閱讀
-    if (novel?.sourceUrl) {
-      window.open(novel.sourceUrl, '_blank');
+    const url = novel?.sourceUrl ? getSafeOpenUrl(novel.sourceUrl) : null;
+    if (url) {
+      window.open(url, '_blank');
     } else {
-      setError('請先輸入小說網址');
+      setError('請先輸入有效的小說網址');
     }
     return;
     
