@@ -1,14 +1,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import Header from './components/header';
-import Sidebar from './components/sidebar';
-import NovelInput from './components/novelinput';
-import NovelDisplay from './components/noveldisplay';
-import AudioControls from './components/audiocontrols';
-import { NovelContent, ReaderState } from './types';
-import { fetchNovelContent, generateSpeech } from './services/geminiService';
-import { decode, decodeAudioData } from './utils/audioUtils';
-import { getSafeOpenUrl } from './utils/urlUtils';
+import Header from './components/header.tsx';
+import Sidebar from './components/sidebar.tsx';
+import NovelInput from './components/novelinput.tsx';
+import NovelDisplay from './components/noveldisplay.tsx';
+import AudioControls from './components/audiocontrols.tsx';
+import { NovelContent, ReaderState } from './types.ts';
+import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
+import { decode, decodeAudioData } from './utils/audioUtils.ts';
+import { getSafeOpenUrl } from './utils/urlUtils.ts';
 
 const STORAGE_KEY_SETTINGS = 'gemini_reader_settings';
 const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';

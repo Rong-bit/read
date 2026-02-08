@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ReaderState, VoiceOption } from '../types';
+import { ReaderState, VoiceOption } from '../types.ts';
 
 interface AudioControlsProps {
   state: ReaderState;

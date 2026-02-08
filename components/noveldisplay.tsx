@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
-import { NovelContent } from '../types';
-import { getSafeOpenUrl } from '../utils/urlUtils';
+import { NovelContent } from '../types.ts';
+import { getSafeOpenUrl } from '../utils/urlUtils.ts';
 
 interface NovelDisplayProps {
   novel: NovelContent | null;
