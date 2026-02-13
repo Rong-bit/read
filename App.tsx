@@ -30,7 +30,7 @@ const App: React.FC = () => {
   const [voice, setVoice] = useState('Kore');
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState(0.8);
-  const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [playbackRate, setPlaybackRate] = useState(0.8);
   
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -47,7 +47,7 @@ const App: React.FC = () => {
   const [webUrl, setWebUrl] = useState('');
   const [webTitle, setWebTitle] = useState('');
   const [webText, setWebText] = useState('');
-  const [webRate, setWebRate] = useState(1.0);
+  const [webRate, setWebRate] = useState(0.8);
   const [webError, setWebError] = useState<string | null>(null);
   const [webLoading, setWebLoading] = useState(false);
   const [webIsSpeaking, setWebIsSpeaking] = useState(false);
@@ -82,7 +82,7 @@ const App: React.FC = () => {
       const s = JSON.parse(savedSettings);
       setVoice(s.voice || 'Kore');
       setVolume(s.volume ?? 0.8);
-      setPlaybackRate(s.playbackRate ?? 1.0);
+      setPlaybackRate(s.playbackRate ?? 0.8);
       setFontSize(s.fontSize ?? 18);
       setTheme(s.theme || 'dark');
     }
@@ -469,8 +469,10 @@ const App: React.FC = () => {
       return;
     }
     setWebError(null);
-    // 估算總時長：中文約每秒 4 字，再除以語速
-    const estimatedSec = Math.max((text.length / 4) / webRate, 1);
+    // 估算總時長：中文約每秒 3-4 字（較慢），再除以語速
+    // 使用較慢的基準速度，讓估算更準確
+    const charsPerSecond = 3.5; // 較慢的語速基準
+    const estimatedSec = Math.max((text.length / charsPerSecond) / webRate, 1);
     webEstimatedDurationRef.current = estimatedSec;
     setWebSpeechTotalSec(estimatedSec);
     webSpeechStartTimeRef.current = Date.now();
