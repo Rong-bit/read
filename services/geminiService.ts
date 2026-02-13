@@ -22,12 +22,15 @@ export const fetchNovelContent = async (input: string, currentTitle?: string): P
     const title = currentTitle || extractTitleFromUrl(url) || '小說閱讀';
 
     // 嘗試呼叫後端抓取正文（本機 npm run dev:all 時有效）
+    console.log('開始抓取小說，URL:', url);
     try {
+      console.log('發送請求到 /api/fetch-novel');
       const res = await fetch('/api/fetch-novel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, currentTitle: title })
       });
+      console.log('收到響應，狀態:', res.status, res.statusText);
       if (res.ok) {
         const data = await res.json();
         console.log('後端返回數據:', { 
@@ -54,9 +57,13 @@ export const fetchNovelContent = async (input: string, currentTitle?: string): P
             groundingSources: undefined
           };
         }
+      } else {
+        const errorText = await res.text();
+        console.error('後端返回錯誤:', res.status, errorText);
       }
-    } catch (_) {
+    } catch (error) {
       // 後端不可用（例如 Vercel 僅前端），繼續使用空 content
+      console.error('呼叫後端失敗:', error);
     }
 
     return {
