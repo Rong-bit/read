@@ -165,6 +165,31 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
         </div>
       )}
 
+      {/* 下一章按鈕 */}
+      {novel.nextChapterUrl && (
+        <div className="mt-8 mb-8 text-center">
+          <button
+            onClick={onNextChapter || (() => {
+              if (novel.nextChapterUrl) {
+                window.location.href = novel.nextChapterUrl;
+              }
+            })}
+            className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
+          >
+            <span>下一章</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+          {/* 調試信息（開發時可見） */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-2 text-xs text-slate-500">
+              下一章URL: {novel.nextChapterUrl}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 版權聲明 */}
       <footer className="mt-12 p-6 bg-slate-900/40 rounded-2xl border border-slate-800/50 backdrop-blur-sm">
         <div className="flex items-center gap-3 mb-4">

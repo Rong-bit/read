@@ -30,11 +30,27 @@ export const fetchNovelContent = async (input: string, currentTitle?: string): P
       });
       if (res.ok) {
         const data = await res.json();
+        console.log('後端返回數據:', { 
+          title: data.title, 
+          contentLength: data.content?.length, 
+          nextChapterUrl: data.nextChapterUrl 
+        });
         if (data.content && data.content.length > 0) {
           return {
             title: data.title || title,
             content: data.content,
             sourceUrl: url,
+            nextChapterUrl: data.nextChapterUrl,
+            groundingSources: undefined
+          };
+        }
+        // 即使沒有內容，也返回 nextChapterUrl（如果有）
+        if (data.nextChapterUrl) {
+          return {
+            title: data.title || title,
+            content: '',
+            sourceUrl: url,
+            nextChapterUrl: data.nextChapterUrl,
             groundingSources: undefined
           };
         }
