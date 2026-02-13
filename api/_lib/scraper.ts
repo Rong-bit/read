@@ -1,6 +1,4 @@
 import * as cheerio from 'cheerio';
-import chromium from '@sparticuz/chromium';
-import puppeteer from 'puppeteer-core';
 
 export interface NovelResult {
   title: string;
@@ -172,14 +170,19 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
 };
 
 const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath: await chromium.executablePath(),
-    headless: chromium.headless
-  });
+  const chromium = (await import('@sparticuz/chromium')).default as any;
+  const puppeteer = (await import('puppeteer-core')).default as any;
 
+  let browser: any = null;
   try {
+    const executablePath = await chromium.executablePath();
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: executablePath || undefined,
+      headless: chromium.headless
+    });
+
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     await page.goto(url, {
@@ -197,8 +200,12 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
     }
 
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字，可能是摘要或抓取失敗）`);
+  } catch (error: any) {
+    throw new Error(`Puppeteer 啟動或抓取失敗：${error?.message || '未知錯誤'}`);
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 };
 
