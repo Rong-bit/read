@@ -574,10 +574,12 @@ const App: React.FC = () => {
                 onNextChapter={handleNextChapter}
               />
               {/* 調試信息 */}
-              {process.env.NODE_ENV === 'development' && novel && (
+              {novel && (
                 <div className="mt-4 p-4 bg-slate-800/50 rounded-xl text-xs text-slate-400">
                   <div>nextChapterUrl: {novel.nextChapterUrl || '未找到'}</div>
                   <div>sourceUrl: {novel.sourceUrl}</div>
+                  <div>title: {novel.title}</div>
+                  <div>content length: {novel.content?.length || 0}</div>
                 </div>
               )}
             </div>

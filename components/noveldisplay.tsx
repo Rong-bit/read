@@ -166,11 +166,12 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
       )}
 
       {/* 下一章按鈕 */}
-      {novel.nextChapterUrl && (
+      {novel.nextChapterUrl ? (
         <div className="mt-8 mb-8 text-center">
           <button
             onClick={onNextChapter || (() => {
               if (novel.nextChapterUrl) {
+                console.log('點擊下一章，跳轉到:', novel.nextChapterUrl);
                 window.location.href = novel.nextChapterUrl;
               }
             })}
@@ -181,12 +182,16 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
           </button>
-          {/* 調試信息（開發時可見） */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-2 text-xs text-slate-500">
-              下一章URL: {novel.nextChapterUrl}
-            </div>
-          )}
+          {/* 調試信息 */}
+          <div className="mt-2 text-xs text-slate-500">
+            下一章URL: {novel.nextChapterUrl}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-8 mb-8 text-center">
+          <div className="text-xs text-slate-500">
+            未找到下一章鏈接（調試信息：nextChapterUrl = {String(novel.nextChapterUrl)}）
+          </div>
         </div>
       )}
 
