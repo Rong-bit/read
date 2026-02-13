@@ -56,6 +56,7 @@ const App: React.FC = () => {
   const [webVoice, setWebVoice] = useState('');
   const [webList, setWebList] = useState<Array<{ id: string; title: string; text: string }>>([]);
   const [showShareHelp, setShowShareHelp] = useState(true);
+  const [showWebChapters, setShowWebChapters] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [hasBackend, setHasBackend] = useState<boolean | null>(null);
 
@@ -618,6 +619,47 @@ const App: React.FC = () => {
               {!isOnline && (
                 <div className="bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs rounded-2xl px-4 py-3">
                   目前離線：無法抓取網址內容，但仍可貼上文字朗讀。
+                </div>
+              )}
+              
+              {/* 章節目錄（web 模式） */}
+              {novel?.chapters && novel.chapters.length > 0 && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="text-sm text-slate-300 font-bold">章節目錄 ({novel.chapters.length} 章)</div>
+                    <button
+                      type="button"
+                      onClick={() => setShowWebChapters(!showWebChapters)}
+                      className="text-xs text-indigo-400 hover:text-indigo-300"
+                    >
+                      {showWebChapters ? '隱藏' : '顯示'}
+                    </button>
+                  </div>
+                  {showWebChapters && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[400px] overflow-y-auto">
+                      {novel.chapters.map((chapter, index) => {
+                        const isCurrentChapter = chapter.url === novel.sourceUrl;
+                        return (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => {
+                              setWebUrl(chapter.url);
+                              handleWebFetch();
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm text-left transition-all ${
+                              isCurrentChapter
+                                ? 'bg-indigo-600 text-white font-bold'
+                                : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-white'
+                            }`}
+                            title={chapter.url}
+                          >
+                            <div className="truncate">{chapter.title || `第 ${index + 1} 章`}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
