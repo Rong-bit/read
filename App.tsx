@@ -469,9 +469,8 @@ const App: React.FC = () => {
       return;
     }
     setWebError(null);
-    // 估算總時長：中文約每秒 3-4 字（較慢），再除以語速
-    // 使用較慢的基準速度，讓估算更準確
-    const charsPerSecond = 3.5; // 較慢的語速基準
+    // 估算總時長：與瀏覽器語音同步。瀏覽器 TTS 實際約 5–6 字/秒（1x），估短一點讓高亮跟上聲音
+    const charsPerSecond = 5.5; // 與實際語速對齊，避免聲音超前文字
     const estimatedSec = Math.max((text.length / charsPerSecond) / webRate, 1);
     webEstimatedDurationRef.current = estimatedSec;
     setWebSpeechTotalSec(estimatedSec);
