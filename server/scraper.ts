@@ -86,6 +86,18 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
       if (nextBtnLink.startsWith('/')) return baseUrl + nextBtnLink;
       return new URL(nextBtnLink, url).href;
     }
+    
+    // 如果所有方法都失敗，嘗試從 URL 模式推斷下一章（僅作為最後手段）
+    console.log('嘗試從 URL 模式推斷下一章...');
+    // 匹配類似 /0315678038/8096_180.html 的 URL
+    const urlMatch = url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
+    if (urlMatch) {
+      const [, bookId, chapterPrefix, chapterNum] = urlMatch;
+      const nextChapterNum = parseInt(chapterNum, 10) + 1;
+      const inferredUrl = `${baseUrl}/${bookId}/${chapterPrefix}_${nextChapterNum}.html`;
+      console.log(`從 URL 模式推斷下一章: ${inferredUrl} (當前: ${chapterNum}, 下一章: ${nextChapterNum})`);
+      return inferredUrl;
+    }
   }
   
   // 通用提取：查找包含"下一章"、"下一頁"、"Next"等文字的链接
@@ -269,6 +281,7 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
   }
 
   // 通用提取：嘗試常見的內容選擇器
+  console.log('開始通用內容提取...');
   const commonSelectors = [
     '.chapter-content',
     '.content',
@@ -278,16 +291,28 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
     'article',
     '.noveltext',
     '#noveltext',
-    '.text-content'
+    '.text-content',
+    'main',
+    '.main-content',
+    '#main-content',
+    '.post-content',
+    '.entry-content'
   ];
   
   for (const selector of commonSelectors) {
     const $content = $(selector).first();
     if ($content.length > 0) {
-      const title = $('h1, .chapter-title, .title').first().text().trim() || 
+      console.log(`嘗試通用選擇器 "${selector}"，找到元素`);
+      
+      // 移除廣告和無關元素
+      $content.find('script, style, .ad, .advertisement, .ads, ins, iframe, .gadBlock, .adBlock').remove();
+      
+      const title = $('h1, .chapter-title, .title, .entry-title, .post-title').first().text().trim() || 
                     $('title').text().trim();
-      const content = $content
-        .find('p, div')
+      
+      // 先嘗試提取段落
+      const paragraphs = $content
+        .find('p')
         .map((_, el) => $(el).text().trim())
         .get()
         .filter(text => {
@@ -297,20 +322,53 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
                  !textLower.includes('copyright') &&
                  !textLower.includes('版權') &&
                  !textLower.includes('本章完') &&
-                 !textLower.includes('下一章');
-        })
-        .join('\n\n');
+                 !textLower.includes('下一章') &&
+                 !textLower.includes('廣告') &&
+                 !textLower.includes('advertisement');
+        });
+      
+      let content = '';
+      if (paragraphs.length > 0) {
+        content = paragraphs.join('\n\n');
+        console.log(`從 "${selector}" 提取到 ${paragraphs.length} 個段落，內容長度: ${content.length}`);
+      }
+      
+      // 如果段落提取失敗或內容太少，嘗試直接提取文本
+      if (content.length < 200) {
+        const directText = $content.text().trim();
+        const lines = directText.split('\n')
+          .map(line => line.trim())
+          .filter(line => {
+            const textLower = line.toLowerCase();
+            return line.length > 20 && 
+                   !textLower.includes('copyright') &&
+                   !textLower.includes('版權') &&
+                   !textLower.includes('廣告') &&
+                   !textLower.includes('advertisement') &&
+                   !textLower.includes('本章完') &&
+                   !textLower.includes('下一章');
+          });
+        content = lines.join('\n\n');
+        console.log(`從 "${selector}" 直接提取文本，內容長度: ${content.length}`);
+      }
       
       if (content.length > 200) {
         const nextChapterUrl = extractNextChapterUrl($, url);
-        return { title, content, sourceUrl: url, nextChapterUrl };
+        console.log(`✓ 通用提取成功：標題「${title}」，內容長度 ${content.length}`);
+        return { title: title || '小說章節', content, sourceUrl: url, nextChapterUrl };
       }
     }
   }
   
   // 最後嘗試：直接提取所有段落
-  const title = $('h1, .chapter-title, .title').first().text().trim() || 
+  console.log('嘗試從所有段落提取內容...');
+  const title = $('h1, .chapter-title, .title, .entry-title, .post-title').first().text().trim() || 
                 $('title').text().trim();
+  console.log('提取到的標題:', title || '(未找到)');
+  
+  // 移除無關元素
+  $('script, style, .ad, .advertisement, .ads, ins, iframe, nav, header, footer').remove();
+  
   const paragraphs = $('p')
     .map((_, el) => $(el).text().trim())
     .get()
@@ -320,28 +378,47 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
              !textLower.includes('copyright') &&
              !textLower.includes('版權') &&
              !textLower.includes('廣告') &&
-             !textLower.includes('advertisement');
+             !textLower.includes('advertisement') &&
+             !textLower.includes('本章完') &&
+             !textLower.includes('下一章');
     });
+  
+  console.log(`找到 ${paragraphs.length} 個有效段落`);
   
   if (paragraphs.length > 3) {
     const content = paragraphs.join('\n\n');
     if (content.length > 200) {
       const nextChapterUrl = extractNextChapterUrl($, url);
-      return { title, content, sourceUrl: url, nextChapterUrl };
+      console.log(`✓ 從段落提取成功：標題「${title}」，內容長度 ${content.length}`);
+      return { title: title || '小說章節', content, sourceUrl: url, nextChapterUrl };
     }
   }
   
+  // 如果還是沒有內容，至少返回標題和下一章鏈接（如果有）
+  const nextChapterUrl = extractNextChapterUrl($, url);
+  if (title || nextChapterUrl) {
+    console.log('⚠️ 無法提取足夠內容，但返回標題和/或下一章鏈接');
+    return {
+      title: title || '小說章節',
+      content: '',
+      sourceUrl: url,
+      nextChapterUrl
+    };
+  }
+  
+  console.log('✗ 通用提取失敗，無法提取任何內容');
   return null;
 };
 
 // 使用 Puppeteer 抓取（處理 JavaScript 渲染）
 const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-  
+  let browser;
   try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
@@ -364,12 +441,52 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
     }
     
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字，可能是摘要或抓取失敗）`);
+  } catch (error: any) {
+    // 如果 Puppeteer 失敗，嘗試從 Cheerio 獲取的 HTML 中至少提取下一章鏈接
+    try {
+      console.log('Puppeteer 失敗，嘗試從 Cheerio 獲取的 HTML 中提取下一章鏈接...');
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8'
+        }
+      });
+      
+      if (response.ok) {
+        const html = await response.text();
+        const $ = cheerio.load(html);
+        const nextChapterUrl = extractNextChapterUrl($, url);
+        
+        if (nextChapterUrl) {
+          // 嘗試從 URL 中提取章節號作為標題
+          const urlMatch = url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
+          const title = urlMatch ? `第${urlMatch[3]}章` : $('title').text().trim() || '小說章節';
+          
+          console.log(`✓ 從 Cheerio HTML 中提取到下一章鏈接: ${nextChapterUrl}`);
+          return {
+            title,
+            content: '',
+            sourceUrl: url,
+            nextChapterUrl
+          };
+        }
+      }
+    } catch (fallbackError: any) {
+      console.log('備用提取也失敗:', fallbackError.message);
+    }
+    
+    // 重新拋出原始錯誤
+    throw error;
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 };
 
 // 使用 fetch + cheerio 抓取（靜態 HTML）
+// 參考可工作版本的簡單實現
 const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
   const response = await fetch(url, {
     headers: {
