@@ -392,13 +392,15 @@ const App: React.FC = () => {
       }
       setWebTitle(data.title || '');
       setWebText(data.content || '');
-      // 同時設置 novel 狀態，以便在 web 模式下也能使用下一章功能
-      if (data.title || data.content || data.nextChapterUrl) {
+      // 同時設置 novel 狀態，以便在 web 模式下也能使用下一章和上一章功能
+      if (data.title || data.content || data.nextChapterUrl || data.prevChapterUrl || data.chapters) {
         setNovel({
           title: data.title || '',
           content: data.content || '',
           sourceUrl: url,
-          nextChapterUrl: data.nextChapterUrl
+          nextChapterUrl: data.nextChapterUrl,
+          prevChapterUrl: data.prevChapterUrl,
+          chapters: data.chapters
         });
       }
       console.log('設置標題:', data.title, '內容長度:', data.content?.length, '下一章:', data.nextChapterUrl);
@@ -683,27 +685,49 @@ const App: React.FC = () => {
                 {webTitle && (
                   <div className="text-xs text-slate-500">標題：{webTitle}</div>
                 )}
-                {/* 下一章按鈕（web 模式） */}
-                {novel?.nextChapterUrl && (
-                  <div className="mb-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (novel.nextChapterUrl) {
-                          setWebUrl(novel.nextChapterUrl);
-                          handleWebFetch();
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
-                    >
-                      <span>下一章</span>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M5 12h14M12 5l7 7-7 7"/>
-                      </svg>
-                    </button>
-                    <div className="mt-2 text-xs text-slate-500">
-                      下一章URL: {novel.nextChapterUrl}
-                    </div>
+                {/* 上一章和下一章按鈕（web 模式） */}
+                {(novel?.prevChapterUrl || novel?.nextChapterUrl) && (
+                  <div className="mb-4 flex flex-wrap gap-3 justify-center">
+                    {novel?.prevChapterUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (novel.prevChapterUrl) {
+                            setWebUrl(novel.prevChapterUrl);
+                            handleWebFetch();
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-bold rounded-xl shadow-lg shadow-slate-600/30 transition-all hover:scale-105 active:scale-95"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        <span>上一章</span>
+                      </button>
+                    )}
+                    {novel?.nextChapterUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (novel.nextChapterUrl) {
+                            setWebUrl(novel.nextChapterUrl);
+                            handleWebFetch();
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
+                      >
+                        <span>下一章</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                      </button>
+                    )}
+                    {(novel?.prevChapterUrl || novel?.nextChapterUrl) && (
+                      <div className="w-full mt-2 text-xs text-slate-500 text-center">
+                        {novel?.prevChapterUrl && <div>上一章URL: {novel.prevChapterUrl}</div>}
+                        {novel?.nextChapterUrl && <div>下一章URL: {novel.nextChapterUrl}</div>}
+                      </div>
+                    )}
                   </div>
                 )}
                 <textarea

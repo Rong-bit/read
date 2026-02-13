@@ -44,16 +44,20 @@ export const fetchNovelContent = async (input: string, currentTitle?: string): P
             content: data.content,
             sourceUrl: url,
             nextChapterUrl: data.nextChapterUrl,
+            prevChapterUrl: data.prevChapterUrl,
+            chapters: data.chapters,
             groundingSources: undefined
           };
         }
-        // 即使沒有內容，也返回 nextChapterUrl（如果有）
-        if (data.nextChapterUrl) {
+        // 即使沒有內容，也返回 nextChapterUrl 或 prevChapterUrl（如果有）
+        if (data.nextChapterUrl || data.prevChapterUrl || data.chapters) {
           return {
             title: data.title || title,
             content: '',
             sourceUrl: url,
             nextChapterUrl: data.nextChapterUrl,
+            prevChapterUrl: data.prevChapterUrl,
+            chapters: data.chapters,
             groundingSources: undefined
           };
         }

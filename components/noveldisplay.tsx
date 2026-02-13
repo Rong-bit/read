@@ -13,6 +13,7 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
   const [displayKey, setDisplayKey] = useState(0);
   const [iframeError, setIframeError] = useState(false);
   const [viewMode, setViewMode] = useState<'iframe' | 'link'>('iframe');
+  const [showChapters, setShowChapters] = useState(false);
 
   // Trigger animation whenever novel content changes
   useEffect(() => {
@@ -48,11 +49,61 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
       className="w-full max-w-6xl mx-auto mt-6 pb-40 animate-fade-in-up"
     >
       <header className="mb-8 text-center">
-        <h2 className="text-3xl md:text-5xl font-bold mb-4 bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
-          {novel.title || '小說閱讀'}
-        </h2>
+        <div className="flex items-center justify-center gap-4 mb-4">
+          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
+            {novel.title || '小說閱讀'}
+          </h2>
+          {novel.chapters && novel.chapters.length > 0 && (
+            <button
+              onClick={() => setShowChapters(!showChapters)}
+              className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-white text-sm font-bold rounded-xl transition-all"
+              title="顯示/隱藏目錄"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"/>
+                <line x1="3" y1="6" x2="21" y2="6"/>
+                <line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
+            </button>
+          )}
+        </div>
         <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full"></div>
       </header>
+
+      {/* 章節目錄 */}
+      {showChapters && novel.chapters && novel.chapters.length > 0 && (
+        <div className="mb-8 bg-slate-900/60 border border-slate-700/50 rounded-2xl p-6 max-h-[600px] overflow-y-auto">
+          <h3 className="text-xl font-bold mb-4 text-slate-200">章節目錄 ({novel.chapters.length} 章)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {novel.chapters.map((chapter, index) => {
+              const isCurrentChapter = chapter.url === novel.sourceUrl;
+              return (
+                <a
+                  key={index}
+                  href={chapter.url}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (onNextChapter && typeof onNextChapter === 'function') {
+                      // 如果提供了 onNextChapter 回调，使用它
+                      window.location.href = chapter.url;
+                    } else {
+                      window.location.href = chapter.url;
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm transition-all ${
+                    isCurrentChapter
+                      ? 'bg-indigo-600 text-white font-bold'
+                      : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-white'
+                  }`}
+                  title={chapter.url}
+                >
+                  <div className="truncate">{chapter.title || `第 ${index + 1} 章`}</div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 視圖模式切換 */}
       <div className="mb-6 flex justify-center gap-3">
@@ -165,32 +216,53 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
         </div>
       )}
 
-      {/* 下一章按鈕 */}
-      {novel.nextChapterUrl ? (
+      {/* 上一章和下一章按鈕 */}
+      {(novel.prevChapterUrl || novel.nextChapterUrl) ? (
         <div className="mt-8 mb-8 text-center">
-          <button
-            onClick={onNextChapter || (() => {
-              if (novel.nextChapterUrl) {
-                console.log('點擊下一章，跳轉到:', novel.nextChapterUrl);
-                window.location.href = novel.nextChapterUrl;
-              }
-            })}
-            className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
-          >
-            <span>下一章</span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-          </button>
+          <div className="flex flex-wrap gap-4 justify-center">
+            {novel.prevChapterUrl && (
+              <button
+                onClick={() => {
+                  if (novel.prevChapterUrl) {
+                    console.log('點擊上一章，跳轉到:', novel.prevChapterUrl);
+                    window.location.href = novel.prevChapterUrl;
+                  }
+                }}
+                className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-bold rounded-xl shadow-lg shadow-slate-600/30 transition-all hover:scale-105 active:scale-95"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                <span>上一章</span>
+              </button>
+            )}
+            {novel.nextChapterUrl && (
+              <button
+                onClick={onNextChapter || (() => {
+                  if (novel.nextChapterUrl) {
+                    console.log('點擊下一章，跳轉到:', novel.nextChapterUrl);
+                    window.location.href = novel.nextChapterUrl;
+                  }
+                })}
+                className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
+              >
+                <span>下一章</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+            )}
+          </div>
           {/* 調試信息 */}
           <div className="mt-2 text-xs text-slate-500">
-            下一章URL: {novel.nextChapterUrl}
+            {novel.prevChapterUrl && <div>上一章URL: {novel.prevChapterUrl}</div>}
+            {novel.nextChapterUrl && <div>下一章URL: {novel.nextChapterUrl}</div>}
           </div>
         </div>
       ) : (
         <div className="mt-8 mb-8 text-center">
           <div className="text-xs text-slate-500">
-            未找到下一章鏈接（調試信息：nextChapterUrl = {String(novel.nextChapterUrl)}）
+            未找到章節鏈接（調試信息：prevChapterUrl = {String(novel.prevChapterUrl)}, nextChapterUrl = {String(novel.nextChapterUrl)}）
           </div>
         </div>
       )}
