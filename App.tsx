@@ -351,7 +351,9 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      if (!res.ok) throw new Error('抓取失敗');
+      if (!res.ok) {
+        throw new Error('此版本缺少後端服務，無法抓取網址內容');
+      }
       const data = await res.json();
       setWebTitle(data.title || '');
       setWebText(data.content || '');
@@ -359,7 +361,11 @@ const App: React.FC = () => {
         setWebError('無法取得內容，可改為直接貼上文字');
       }
     } catch (err) {
-      setWebError('抓取失敗，請改為直接貼上文字');
+      const msg =
+        err instanceof Error
+          ? err.message
+          : '抓取失敗，請改為直接貼上文字';
+      setWebError(msg || '抓取失敗，請改為直接貼上文字');
     } finally {
       setWebLoading(false);
     }
@@ -591,6 +597,9 @@ const App: React.FC = () => {
                 </div>
                 <div className="text-xs text-slate-500">
                   GitHub Pages 為純前端，無法抓取網址；請改用貼文字朗讀。
+                </div>
+                <div className="text-xs text-slate-500">
+                  目前部署沒有後端代理，`/api/fetch-novel` 端點不存在，因此會顯示抓取失敗。
                 </div>
                 {webError && (
                   <div className="text-xs text-orange-400">{webError}</div>
