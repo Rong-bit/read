@@ -597,6 +597,9 @@ const App: React.FC = () => {
                 novel={novel} 
                 isLoading={state === ReaderState.FETCHING} 
                 onNextChapter={handleNextChapter}
+                currentTime={currentTime}
+                duration={duration}
+                isPlaying={state === ReaderState.PLAYING}
               />
               {/* 調試信息 */}
               {novel && (

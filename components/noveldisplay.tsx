@@ -7,13 +7,44 @@ interface NovelDisplayProps {
   novel: NovelContent | null;
   isLoading: boolean;
   onNextChapter?: () => void;
+  currentTime?: number; // 當前播放時間（秒）
+  duration?: number; // 總時長（秒）
+  isPlaying?: boolean; // 是否正在播放
 }
 
-const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextChapter }) => {
+const NovelDisplay: React.FC<NovelDisplayProps> = ({ 
+  novel, 
+  isLoading, 
+  onNextChapter,
+  currentTime = 0,
+  duration = 0,
+  isPlaying = false
+}) => {
   const [displayKey, setDisplayKey] = useState(0);
   const [iframeError, setIframeError] = useState(false);
-  const [viewMode, setViewMode] = useState<'iframe' | 'link'>('iframe');
+  const [viewMode, setViewMode] = useState<'iframe' | 'link' | 'text'>('iframe');
   const [showChapters, setShowChapters] = useState(false);
+  
+  // 計算當前應該高亮的行
+  const getCurrentLineIndex = (): number => {
+    if (!novel?.content || !isPlaying || duration === 0) return -1;
+    const text = novel.content;
+    const allLines = text.split('\n');
+    const nonEmptyLines = allLines.map((line, index) => ({ line, originalIndex: index }))
+      .filter(({ line }) => line.trim().length > 0);
+    
+    if (nonEmptyLines.length === 0) return -1;
+    
+    // 根據播放進度計算當前行
+    const progress = Math.min(currentTime / duration, 1);
+    const currentLineIndex = Math.floor(progress * nonEmptyLines.length);
+    const targetIndex = Math.min(currentLineIndex, nonEmptyLines.length - 1);
+    
+    // 返回原始行索引（包含空行）
+    return nonEmptyLines[targetIndex]?.originalIndex ?? -1;
+  };
+  
+  const currentLineIndex = getCurrentLineIndex();
 
   // Trigger animation whenever novel content changes
   useEffect(() => {
@@ -106,7 +137,7 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
       )}
 
       {/* 視圖模式切換 */}
-      <div className="mb-6 flex justify-center gap-3">
+      <div className="mb-6 flex justify-center gap-3 flex-wrap">
         <button
           onClick={() => setViewMode('iframe')}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
@@ -122,6 +153,21 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
           </svg>
           內嵌閱讀
         </button>
+        {novel.content && novel.content.length > 0 && (
+          <button
+            onClick={() => setViewMode('text')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              viewMode === 'text'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-2">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+            </svg>
+          文本閱讀
+          </button>
+        )}
         <button
           onClick={() => setViewMode('link')}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
@@ -137,6 +183,57 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
           直接跳轉
         </button>
       </div>
+
+      {/* 文本閱讀模式 */}
+      {viewMode === 'text' && novel.content && (
+        <div className="mb-8">
+          <div 
+            className="bg-slate-900/60 border border-slate-700/50 rounded-2xl p-8 md:p-12 max-h-[800px] overflow-y-auto"
+            id="text-reader-container"
+          >
+            <div className="prose prose-invert max-w-none leading-relaxed">
+              {novel.content.split('\n').map((line, index) => {
+                const isCurrentLine = isPlaying && index === currentLineIndex;
+                const isEmpty = line.trim().length === 0;
+                
+                if (isEmpty) {
+                  return <div key={index} className="h-4"></div>;
+                }
+                
+                return (
+                  <p
+                    key={index}
+                    id={`line-${index}`}
+                    className={`mb-4 transition-all duration-500 ease-in-out ${
+                      isCurrentLine
+                        ? 'text-2xl md:text-3xl lg:text-4xl font-bold text-indigo-200 bg-indigo-500/30 px-6 py-4 rounded-xl shadow-lg shadow-indigo-500/50 transform scale-[1.05] border-2 border-indigo-400/50'
+                        : 'text-base md:text-lg text-slate-300 opacity-80'
+                    }`}
+                    style={{
+                      scrollMarginTop: '150px',
+                      transition: 'all 0.5s ease-in-out'
+                    }}
+                    ref={(el) => {
+                      if (isCurrentLine && el) {
+                        setTimeout(() => {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                        }, 100);
+                      }
+                    }}
+                  >
+                    {line}
+                  </p>
+                );
+              })}
+            </div>
+          </div>
+          {isPlaying && (
+            <div className="mt-4 text-center text-xs text-slate-500">
+              正在朗讀中... {Math.floor(currentTime)}s / {Math.floor(duration)}s
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Iframe 嵌入模式：僅在網址有效時嵌入，避免 Safari 顯示「網址無效」 */}
       {viewMode === 'iframe' && !iframeError && hasValidUrl && (
