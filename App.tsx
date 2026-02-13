@@ -633,9 +633,6 @@ const App: React.FC = () => {
                 novel={novel} 
                 isLoading={state === ReaderState.FETCHING} 
                 onNextChapter={handleNextChapter}
-                currentTime={currentTime}
-                duration={duration}
-                isPlaying={state === ReaderState.PLAYING}
               />
               {/* 調試信息 */}
               {novel && (
@@ -764,57 +761,6 @@ const App: React.FC = () => {
                 </div>
                 {webTitle && (
                   <div className="text-xs text-slate-500">標題：{webTitle}</div>
-                )}
-                {/* 朗讀時按行顯示，當前行字體放大 */}
-                {(webIsSpeaking || webIsPaused) && webText.trim() && (
-                  <div className="mb-4 bg-slate-900/80 border border-slate-700/50 rounded-2xl p-6 max-h-[500px] overflow-y-auto">
-                    <div className="text-sm text-slate-400 mb-2">
-                      {webIsPaused ? '已暫停' : '朗讀中'} · {Math.floor(webSpeechElapsed)}s / {Math.floor(webSpeechTotalSec)}s
-                    </div>
-                    <div className="space-y-3">
-                      {(() => {
-                        const totalSec = webSpeechTotalSec || 1;
-                        const progressBoost = 0; // 不再超前，高亮與語音對齊
-                        const progress = Math.min((webSpeechElapsed / totalSec) * (1 + progressBoost), 1);
-                        // 依「字元位置」計算當前行：長行佔用時間多、短行少，高亮與語音同步
-                        const allLines = webText.split('\n');
-                        const totalChars = Math.max(webText.length, 1);
-                        const currentCharIndex = Math.min(Math.floor(progress * totalChars), totalChars - 1);
-                        let charCount = 0;
-                        let currentOriginalIndex = 0;
-                        for (let i = 0; i < allLines.length; i++) {
-                          const lineEnd = charCount + allLines[i].length; // 該行結尾的字元位置
-                          if (currentCharIndex < lineEnd || i === allLines.length - 1) {
-                            currentOriginalIndex = i;
-                            break;
-                          }
-                          charCount = lineEnd + 1; // +1 為換行符
-                        }
-                        return webText.split('\n').map((line, index) => {
-                        const isCurrentLine = index === currentOriginalIndex;
-                        if (line.trim().length === 0) {
-                          return <div key={index} className="h-3" />;
-                        }
-                        return (
-                          <p
-                            key={index}
-                            className={`transition-all duration-300 ${
-                              isCurrentLine
-                                ? 'text-2xl md:text-3xl font-bold text-indigo-200 bg-indigo-500/30 px-4 py-3 rounded-xl'
-                                : 'text-base text-slate-400'
-                            }`}
-                            ref={(el) => {
-                              if (isCurrentLine && el) {
-                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                              }
-                            }}
-                          >
-                            {line}
-                          </p>
-                        );
-                      }); })()}
-                    </div>
-                  </div>
                 )}
                 {/* 上一章和下一章按鈕（web 模式） */}
                 {(novel?.prevChapterUrl || novel?.nextChapterUrl) && (

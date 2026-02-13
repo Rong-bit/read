@@ -7,47 +7,14 @@ interface NovelDisplayProps {
   novel: NovelContent | null;
   isLoading: boolean;
   onNextChapter?: () => void;
-  currentTime?: number; // 當前播放時間（秒）
-  duration?: number; // 總時長（秒）
-  isPlaying?: boolean; // 是否正在播放
 }
 
-const NovelDisplay: React.FC<NovelDisplayProps> = ({ 
-  novel, 
-  isLoading, 
-  onNextChapter,
-  currentTime = 0,
-  duration = 0,
-  isPlaying = false
-}) => {
+const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextChapter }) => {
   const [displayKey, setDisplayKey] = useState(0);
   const [iframeError, setIframeError] = useState(false);
   const [viewMode, setViewMode] = useState<'iframe' | 'link' | 'text'>('iframe');
   const [showChapters, setShowChapters] = useState(false);
   
-  // 計算當前應該高亮的行（朗讀到哪一行就放大該行）
-  const getCurrentLineIndex = (): number => {
-    if (!novel?.content || !isPlaying) return -1;
-    const safeDuration = Math.max(duration, 0.001);
-    if (safeDuration <= 0) return -1;
-    const text = novel.content;
-    const allLines = text.split('\n');
-    const nonEmptyLines = allLines.map((line, index) => ({ line, originalIndex: index }))
-      .filter(({ line }) => line.trim().length > 0);
-    
-    if (nonEmptyLines.length === 0) return -1;
-    
-    // 根據播放進度計算當前行
-    const progress = Math.min(currentTime / safeDuration, 1);
-    const currentLineIndex = Math.floor(progress * nonEmptyLines.length);
-    const targetIndex = Math.min(currentLineIndex, nonEmptyLines.length - 1);
-    
-    // 返回原始行索引（包含空行）
-    return nonEmptyLines[targetIndex]?.originalIndex ?? -1;
-  };
-  
-  const currentLineIndex = getCurrentLineIndex();
-
   // Trigger animation whenever novel content changes
   useEffect(() => {
     if (novel) {
@@ -186,7 +153,7 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({
         </button>
       </div>
 
-      {/* 文本閱讀模式 */}
+      {/* 文本閱讀模式（無高亮/字體放大） */}
       {viewMode === 'text' && novel.content && (
         <div className="mb-8">
           <div 
@@ -195,45 +162,18 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({
           >
             <div className="prose prose-invert max-w-none leading-relaxed">
               {novel.content.split('\n').map((line, index) => {
-                const isCurrentLine = isPlaying && index === currentLineIndex;
                 const isEmpty = line.trim().length === 0;
-                
                 if (isEmpty) {
                   return <div key={index} className="h-4"></div>;
                 }
-                
                 return (
-                  <p
-                    key={index}
-                    id={`line-${index}`}
-                    className={`mb-4 transition-all duration-500 ease-in-out ${
-                      isCurrentLine
-                        ? 'text-2xl md:text-3xl lg:text-4xl font-bold text-indigo-200 bg-indigo-500/30 px-6 py-4 rounded-xl shadow-lg shadow-indigo-500/50 transform scale-[1.05] border-2 border-indigo-400/50'
-                        : 'text-base md:text-lg text-slate-300 opacity-80'
-                    }`}
-                    style={{
-                      scrollMarginTop: '150px',
-                      transition: 'all 0.5s ease-in-out'
-                    }}
-                    ref={(el) => {
-                      if (isCurrentLine && el) {
-                        setTimeout(() => {
-                          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-                        }, 100);
-                      }
-                    }}
-                  >
+                  <p key={index} className="mb-4 text-base md:text-lg text-slate-300">
                     {line}
                   </p>
                 );
               })}
             </div>
           </div>
-          {isPlaying && (
-            <div className="mt-4 text-center text-xs text-slate-500">
-              正在朗讀中... {Math.floor(currentTime)}s / {Math.floor(duration)}s
-            </div>
-          )}
         </div>
       )}
 
