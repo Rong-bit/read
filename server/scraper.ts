@@ -86,6 +86,43 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
     }
   }
   
+  // 黃金屋 (hjwzw.com / tw.hjwzw.com)
+  if (urlLower.includes('hjwzw.com')) {
+    const $main = $('div[style*="750px"]').first();
+    if ($main.length > 0) {
+      const title = $('h1, .chapter-title, .title').first().text().trim() || $('title').text().trim();
+      const content = $main
+        .find('p')
+        .map((_, el) => $(el).text().trim())
+        .get()
+        .filter(t => t.length > 5 && !t.includes('請記住本站域名'))
+        .join('\n\n');
+      if (content.length > 100) {
+        return { title, content, sourceUrl: url };
+      }
+    }
+  }
+
+  // 稷下書院 / twword.com (look.twword.com)
+  if (urlLower.includes('twword.com')) {
+    const title = $('.chapter-content h1').first().text().trim() ||
+                  $('h1').first().text().trim() ||
+                  $('title').text().trim();
+    const $content = $('.chapter-content .content').first();
+    if ($content.length > 0) {
+      $content.find('.gadBlock, .adBlock, ins, script, iframe, ad').remove();
+      const content = $content
+        .find('p')
+        .map((_, el) => $(el).text().trim())
+        .get()
+        .filter(text => text.length > 0 && !text.includes('溫馨提示'))
+        .join('\n\n');
+      if (content.length > 100) {
+        return { title, content, sourceUrl: url };
+      }
+    }
+  }
+
   // 通用提取：嘗試常見的內容選擇器
   const commonSelectors = [
     '.chapter-content',

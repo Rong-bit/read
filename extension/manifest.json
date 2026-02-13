@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Simple Web Reader",
+  "version": "0.1.0",
+  "description": "Read selected text or the main article with adjustable speed.",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Reader"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["readability.js", "inpageUi.js", "contentScript.js"],
+      "css": ["inpageUi.css"]
+    }
+  ]
+}

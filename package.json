@@ -1,8 +1,11 @@
 {
-  "name": "gemini-小說朗讀器",
+  "name": "gemini-novel-reader",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vite",
     "dev:server": "cd server && npm run dev",
@@ -12,15 +15,19 @@
     "install:all": "npm install && cd server && npm install"
   },
   "dependencies": {
+    "@google/genai": "^1.40.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "@google/genai": "^1.40.0"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.24",
+    "concurrently": "^8.2.2",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "concurrently": "^8.2.2"
+    "@tailwindcss/postcss": "^4.1.18"
   }
 }
