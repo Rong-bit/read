@@ -5,6 +5,7 @@ export interface NovelResult {
   title: string;
   content: string;
   sourceUrl?: string;
+  nextChapterUrl?: string;
 }
 
 // 判斷是否需要使用 Puppeteer（JavaScript 渲染）
@@ -12,6 +13,131 @@ const needsPuppeteer = (url: string): boolean => {
   const urlLower = url.toLowerCase();
   // 大部分小說網站都是靜態 HTML，但有些可能需要 JS
   return urlLower.includes('qidian.com') || urlLower.includes('webnovel.com');
+};
+
+// 提取下一章链接
+const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | undefined => {
+  const urlLower = url.toLowerCase();
+  let baseUrl: string;
+  try {
+    baseUrl = new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+  
+  // 稷下書院 / twword.com - 从脚本变量中提取
+  if (urlLower.includes('twword.com')) {
+    // 尝试从 JavaScript 变量中提取（支持多种格式）
+    const scripts = $('script').toArray();
+    for (const script of scripts) {
+      const scriptText = $(script).html() || $(script).text() || '';
+      // 匹配 var nextUrl = '/path/to/next.html';
+      let nextUrlMatch = scriptText.match(/var\s+nextUrl\s*=\s*['"]([^'"]+)['"]/);
+      if (!nextUrlMatch) {
+        // 匹配 nextUrl = '/path/to/next.html';
+        nextUrlMatch = scriptText.match(/nextUrl\s*=\s*['"]([^'"]+)['"]/);
+      }
+      if (!nextUrlMatch) {
+        // 匹配 "nextUrl":"/path/to/next.html"
+        nextUrlMatch = scriptText.match(/["']nextUrl["']\s*:\s*["']([^"']+)["']/);
+      }
+      if (nextUrlMatch && nextUrlMatch[1]) {
+        const nextUrl = nextUrlMatch[1];
+        console.log('從腳本變量提取到下一章:', nextUrl);
+        if (nextUrl.startsWith('http')) return nextUrl;
+        if (nextUrl.startsWith('/')) return baseUrl + nextUrl;
+        try {
+          return new URL(nextUrl, url).href;
+        } catch {
+          return baseUrl + nextUrl;
+        }
+      }
+    }
+    
+    // 从底部导航中提取
+    const footNavLinks = $('.foot-nav a').toArray();
+    for (const link of footNavLinks) {
+      const $link = $(link);
+      const text = $link.text().trim();
+      if (text.includes('下一章') || text.includes('下一頁')) {
+        const href = $link.attr('href');
+        if (href) {
+          console.log('從底部導航提取到下一章:', href);
+          if (href.startsWith('http')) return href;
+          if (href.startsWith('/')) return baseUrl + href;
+          try {
+            return new URL(href, url).href;
+          } catch {
+            return baseUrl + href;
+          }
+        }
+      }
+    }
+    
+    // 从 nextBtn 类中提取
+    const nextBtnLink = $('.nextBtn').parent('a').attr('href') || 
+                       $('a.nextBtn').attr('href') ||
+                       $('[class*="next"]').filter((_, el) => {
+                         const text = $(el).text().toLowerCase();
+                         return text.includes('下一章') || text.includes('下一頁');
+                       }).attr('href');
+    if (nextBtnLink) {
+      if (nextBtnLink.startsWith('http')) return nextBtnLink;
+      if (nextBtnLink.startsWith('/')) return baseUrl + nextBtnLink;
+      return new URL(nextBtnLink, url).href;
+    }
+  }
+  
+  // 通用提取：查找包含"下一章"、"下一頁"、"Next"等文字的链接
+  const commonNextSelectors = [
+    'a:contains("下一章")',
+    'a:contains("下一頁")',
+    'a:contains("下一页")',
+    'a:contains("Next")',
+    'a.next',
+    'a.next-chapter',
+    '.next-chapter a',
+    '.nextBtn a',
+    '.nextBtn'
+  ];
+  
+  for (const selector of commonNextSelectors) {
+    try {
+      const $link = $(selector).first();
+      if ($link.length > 0) {
+        const href = $link.attr('href') || $link.find('a').attr('href');
+        if (href && !href.includes('javascript:') && !href.includes('#')) {
+          if (href.startsWith('http')) return href;
+          if (href.startsWith('/')) return baseUrl + href;
+          return new URL(href, url).href;
+        }
+      }
+    } catch (e) {
+      // 某些选择器可能不支持，继续尝试下一个
+      continue;
+    }
+  }
+  
+  // 从文本内容中查找链接
+  const allLinks = $('a').toArray();
+  for (const link of allLinks) {
+    const $link = $(link);
+    const text = $link.text().trim().toLowerCase();
+    const href = $link.attr('href');
+    if (href && (text.includes('下一章') || text.includes('下一頁') || text.includes('下一页'))) {
+      console.log('從通用鏈接提取到下一章:', href);
+      if (href.startsWith('http')) return href;
+      if (href.startsWith('/')) return baseUrl + href;
+      try {
+        return new URL(href, url).href;
+      } catch {
+        return baseUrl + href;
+      }
+    }
+  }
+  
+  console.log('未找到下一章鏈接');
+  return undefined;
 };
 
 // 通用內容提取函數
@@ -31,7 +157,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
       .join('\n\n');
     
     if (content.length > 100) {
-      return { title, content, sourceUrl: url };
+      const nextChapterUrl = extractNextChapterUrl($, url);
+      return { title, content, sourceUrl: url, nextChapterUrl };
     }
   }
   
@@ -48,7 +175,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
       .join('\n\n');
     
     if (content.length > 100) {
-      return { title, content, sourceUrl: url };
+      const nextChapterUrl = extractNextChapterUrl($, url);
+      return { title, content, sourceUrl: url, nextChapterUrl };
     }
   }
   
@@ -65,7 +193,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
       .join('\n\n');
     
     if (content.length > 100) {
-      return { title, content, sourceUrl: url };
+      const nextChapterUrl = extractNextChapterUrl($, url);
+      return { title, content, sourceUrl: url, nextChapterUrl };
     }
   }
   
@@ -82,7 +211,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
       .join('\n\n');
     
     if (content.length > 100) {
-      return { title, content, sourceUrl: url };
+      const nextChapterUrl = extractNextChapterUrl($, url);
+      return { title, content, sourceUrl: url, nextChapterUrl };
     }
   }
   
@@ -109,6 +239,11 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
                   $('h1').first().text().trim() ||
                   $('title').text().trim();
     const $content = $('.chapter-content .content').first();
+    
+    // 先提取下一章链接（无论内容是否足够）
+    const nextChapterUrl = extractNextChapterUrl($, url);
+    console.log('twword.com 提取到的下一章链接:', nextChapterUrl);
+    
     if ($content.length > 0) {
       $content.find('.gadBlock, .adBlock, ins, script, iframe, ad').remove();
       const content = $content
@@ -118,8 +253,18 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
         .filter(text => text.length > 0 && !text.includes('溫馨提示'))
         .join('\n\n');
       if (content.length > 100) {
-        return { title, content, sourceUrl: url };
+        return { title, content, sourceUrl: url, nextChapterUrl };
       }
+    }
+    
+    // 即使内容不够，也返回结果（包含下一章链接）
+    if (nextChapterUrl) {
+      return { 
+        title, 
+        content: '', 
+        sourceUrl: url, 
+        nextChapterUrl 
+      };
     }
   }
 
@@ -157,7 +302,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
         .join('\n\n');
       
       if (content.length > 200) {
-        return { title, content, sourceUrl: url };
+        const nextChapterUrl = extractNextChapterUrl($, url);
+        return { title, content, sourceUrl: url, nextChapterUrl };
       }
     }
   }
@@ -180,7 +326,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
   if (paragraphs.length > 3) {
     const content = paragraphs.join('\n\n');
     if (content.length > 200) {
-      return { title, content, sourceUrl: url };
+      const nextChapterUrl = extractNextChapterUrl($, url);
+      return { title, content, sourceUrl: url, nextChapterUrl };
     }
   }
   
