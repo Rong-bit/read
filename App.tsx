@@ -774,17 +774,22 @@ const App: React.FC = () => {
                     <div className="space-y-3">
                       {(() => {
                         const totalSec = webSpeechTotalSec || 1;
-                        // 讓進度微幅超前，與語音對齊
-                        const progressBoost = 0.12; // 提前約 12%
+                        const progressBoost = 0.12;
                         const progress = Math.min((webSpeechElapsed / totalSec) * (1 + progressBoost), 1);
-                        const lines = webText.split('\n').filter(l => l.trim().length > 0);
-                        const totalLines = Math.max(lines.length, 1);
-                        const currentLineAmongNonEmpty = Math.min(Math.floor(progress * totalLines), totalLines - 1);
-                        const nonEmptyIndices = webText.split('\n')
-                          .map((l, i) => ({ l, i }))
-                          .filter(({ l }) => l.trim().length > 0)
-                          .map(({ i }) => i);
-                        const currentOriginalIndex = nonEmptyIndices[currentLineAmongNonEmpty] ?? -1;
+                        // 依「字元位置」計算當前行：長行佔用時間多、短行少，高亮與語音同步
+                        const allLines = webText.split('\n');
+                        const totalChars = Math.max(webText.length, 1);
+                        const currentCharIndex = Math.min(Math.floor(progress * totalChars), totalChars - 1);
+                        let charCount = 0;
+                        let currentOriginalIndex = 0;
+                        for (let i = 0; i < allLines.length; i++) {
+                          const lineEnd = charCount + allLines[i].length; // 該行結尾的字元位置
+                          if (currentCharIndex < lineEnd || i === allLines.length - 1) {
+                            currentOriginalIndex = i;
+                            break;
+                          }
+                          charCount = lineEnd + 1; // +1 為換行符
+                        }
                         return webText.split('\n').map((line, index) => {
                         const isCurrentLine = index === currentOriginalIndex;
                         if (line.trim().length === 0) {
