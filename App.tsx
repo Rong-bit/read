@@ -568,7 +568,18 @@ const App: React.FC = () => {
 
           {readerMode === 'novel' && (
             <div style={{ fontSize: `${fontSize}px` }}>
-              <NovelDisplay novel={novel} isLoading={state === ReaderState.FETCHING} onNextChapter={handleNextChapter} />
+              <NovelDisplay 
+                novel={novel} 
+                isLoading={state === ReaderState.FETCHING} 
+                onNextChapter={handleNextChapter}
+              />
+              {/* 調試信息 */}
+              {process.env.NODE_ENV === 'development' && novel && (
+                <div className="mt-4 p-4 bg-slate-800/50 rounded-xl text-xs text-slate-400">
+                  <div>nextChapterUrl: {novel.nextChapterUrl || '未找到'}</div>
+                  <div>sourceUrl: {novel.sourceUrl}</div>
+                </div>
+              )}
             </div>
           )}
 
