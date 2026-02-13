@@ -68,6 +68,12 @@ const App: React.FC = () => {
   const requestRef = useRef<number>(0);
   const lastSavedTimeRef = useRef<number>(0);
   const webUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const webSpeechStartTimeRef = useRef<number>(0);
+  const webSpeechPausedElapsedRef = useRef<number>(0);
+  const webEstimatedDurationRef = useRef<number>(0);
+  const webSpeechTickRef = useRef<number>(0);
+  const [webSpeechElapsed, setWebSpeechElapsed] = useState(0);
+  const [webSpeechTotalSec, setWebSpeechTotalSec] = useState(0);
 
   // --- Initialization ---
   useEffect(() => {
@@ -447,11 +453,13 @@ const App: React.FC = () => {
     }
     if (webIsSpeaking && !webIsPaused) {
       speechSynthesis.pause();
+      webSpeechPausedElapsedRef.current = webSpeechElapsed;
       setWebIsPaused(true);
       return;
     }
     if (webIsSpeaking && webIsPaused) {
       speechSynthesis.resume();
+      webSpeechStartTimeRef.current = Date.now() - webSpeechPausedElapsedRef.current * 1000;
       setWebIsPaused(false);
       return;
     }
@@ -461,6 +469,13 @@ const App: React.FC = () => {
       return;
     }
     setWebError(null);
+    // 估算總時長：中文約每秒 4 字，再除以語速
+    const estimatedSec = Math.max((text.length / 4) / webRate, 1);
+    webEstimatedDurationRef.current = estimatedSec;
+    setWebSpeechTotalSec(estimatedSec);
+    webSpeechStartTimeRef.current = Date.now();
+    webSpeechPausedElapsedRef.current = 0;
+    setWebSpeechElapsed(0);
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = webRate;
     if (webVoice) {
@@ -471,12 +486,14 @@ const App: React.FC = () => {
       setWebIsSpeaking(false);
       setWebIsPaused(false);
       webUtteranceRef.current = null;
+      setWebSpeechElapsed(0);
     };
     utterance.onerror = () => {
       setWebError('朗讀失敗，請稍後再試');
       setWebIsSpeaking(false);
       setWebIsPaused(false);
       webUtteranceRef.current = null;
+      setWebSpeechElapsed(0);
     };
     webUtteranceRef.current = utterance;
     setWebIsSpeaking(true);
@@ -489,7 +506,22 @@ const App: React.FC = () => {
     setWebIsSpeaking(false);
     setWebIsPaused(false);
     webUtteranceRef.current = null;
+    setWebSpeechElapsed(0);
   };
+
+  // Web 朗讀進度：用於跟讀時當前行高亮
+  useEffect(() => {
+    if (!webIsSpeaking || webIsPaused) return;
+    const tick = () => {
+      const elapsed = (Date.now() - webSpeechStartTimeRef.current) / 1000;
+      const total = webEstimatedDurationRef.current || 1;
+      const value = Math.min(elapsed, total);
+      setWebSpeechElapsed(value);
+      webSpeechTickRef.current = requestAnimationFrame(tick);
+    };
+    webSpeechTickRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(webSpeechTickRef.current);
+  }, [webIsSpeaking, webIsPaused]);
 
   const handleWebAddToList = () => {
     const text = webText.trim();
@@ -731,6 +763,50 @@ const App: React.FC = () => {
                 </div>
                 {webTitle && (
                   <div className="text-xs text-slate-500">標題：{webTitle}</div>
+                )}
+                {/* 朗讀時按行顯示，當前行字體放大 */}
+                {(webIsSpeaking || webIsPaused) && webText.trim() && (
+                  <div className="mb-4 bg-slate-900/80 border border-slate-700/50 rounded-2xl p-6 max-h-[500px] overflow-y-auto">
+                    <div className="text-sm text-slate-400 mb-2">
+                      {webIsPaused ? '已暫停' : '朗讀中'} · {Math.floor(webSpeechElapsed)}s / {Math.floor(webSpeechTotalSec)}s
+                    </div>
+                    <div className="space-y-3">
+                      {(() => {
+                        const totalSec = webSpeechTotalSec || 1;
+                        const progress = Math.min(webSpeechElapsed / totalSec, 1);
+                        const lines = webText.split('\n').filter(l => l.trim().length > 0);
+                        const totalLines = Math.max(lines.length, 1);
+                        const currentLineAmongNonEmpty = Math.min(Math.floor(progress * totalLines), totalLines - 1);
+                        const nonEmptyIndices = webText.split('\n')
+                          .map((l, i) => ({ l, i }))
+                          .filter(({ l }) => l.trim().length > 0)
+                          .map(({ i }) => i);
+                        const currentOriginalIndex = nonEmptyIndices[currentLineAmongNonEmpty] ?? -1;
+                        return webText.split('\n').map((line, index) => {
+                        const isCurrentLine = index === currentOriginalIndex;
+                        if (line.trim().length === 0) {
+                          return <div key={index} className="h-3" />;
+                        }
+                        return (
+                          <p
+                            key={index}
+                            className={`transition-all duration-300 ${
+                              isCurrentLine
+                                ? 'text-2xl md:text-3xl font-bold text-indigo-200 bg-indigo-500/30 px-4 py-3 rounded-xl'
+                                : 'text-base text-slate-400'
+                            }`}
+                            ref={(el) => {
+                              if (isCurrentLine && el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }
+                            }}
+                          >
+                            {line}
+                          </p>
+                        );
+                      }); })()}
+                    </div>
+                  </div>
                 )}
                 {/* 上一章和下一章按鈕（web 模式） */}
                 {(novel?.prevChapterUrl || novel?.nextChapterUrl) && (

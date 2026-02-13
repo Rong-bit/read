@@ -25,9 +25,11 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({
   const [viewMode, setViewMode] = useState<'iframe' | 'link' | 'text'>('iframe');
   const [showChapters, setShowChapters] = useState(false);
   
-  // 計算當前應該高亮的行
+  // 計算當前應該高亮的行（朗讀到哪一行就放大該行）
   const getCurrentLineIndex = (): number => {
-    if (!novel?.content || !isPlaying || duration === 0) return -1;
+    if (!novel?.content || !isPlaying) return -1;
+    const safeDuration = Math.max(duration, 0.001);
+    if (safeDuration <= 0) return -1;
     const text = novel.content;
     const allLines = text.split('\n');
     const nonEmptyLines = allLines.map((line, index) => ({ line, originalIndex: index }))
@@ -36,7 +38,7 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({
     if (nonEmptyLines.length === 0) return -1;
     
     // 根據播放進度計算當前行
-    const progress = Math.min(currentTime / duration, 1);
+    const progress = Math.min(currentTime / safeDuration, 1);
     const currentLineIndex = Math.floor(progress * nonEmptyLines.length);
     const targetIndex = Math.min(currentLineIndex, nonEmptyLines.length - 1);
     
