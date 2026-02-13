@@ -215,18 +215,26 @@ const App: React.FC = () => {
   }, [webVoice]);
 
   const handleSearch = async (input: string) => {
+    console.log('handleSearch 被調用，輸入:', input);
     try {
       handleStop();
       setState(ReaderState.FETCHING);
       setError(null);
+      console.log('開始調用 fetchNovelContent');
       const data = await fetchNovelContent(input);
+      console.log('fetchNovelContent 返回:', {
+        title: data.title,
+        sourceUrl: data.sourceUrl,
+        nextChapterUrl: data.nextChapterUrl,
+        contentLength: data.content?.length
+      });
       setNovel(data);
       saveReadingProgress(0);
       setShowSearch(false); // 成功載入後隱藏搜尋區域
       setState(ReaderState.IDLE);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
-      console.error(err);
+      console.error('handleSearch 錯誤:', err);
       setError(err.message || "無法處理網址。請檢查網址是否正確。");
       setState(ReaderState.ERROR);
     }
@@ -358,6 +366,7 @@ const App: React.FC = () => {
 
   const handleWebFetch = async () => {
     const url = normalizeUrl(webUrl);
+    console.log('handleWebFetch 被調用，URL:', url);
     if (!url) {
       setWebError('請輸入正確的網址');
       return;
@@ -365,25 +374,30 @@ const App: React.FC = () => {
     setWebError(null);
     setWebLoading(true);
     try {
+      console.log('發送請求到 /api/fetch-novel，URL:', url);
       const res = await fetch('/api/fetch-novel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
+      console.log('收到響應，狀態:', res.status, res.statusText);
       if (res.status === 404) {
         setHasBackend(false);
         throw new Error('未偵測到後端服務，無法抓取網址內容');
       }
       const data = await res.json().catch(() => null);
+      console.log('解析後的數據:', data);
       if (!res.ok) {
         throw new Error(data?.error || '抓取失敗，請改為直接貼上文字');
       }
       setWebTitle(data.title || '');
       setWebText(data.content || '');
+      console.log('設置標題:', data.title, '內容長度:', data.content?.length, '下一章:', data.nextChapterUrl);
       if (!data.content) {
         setWebError('無法取得內容，可改為直接貼上文字');
       }
     } catch (err) {
+      console.error('handleWebFetch 錯誤:', err);
       const msg =
         err instanceof Error
           ? err.message

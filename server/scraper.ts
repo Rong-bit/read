@@ -412,13 +412,12 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
 
 // 使用 Puppeteer 抓取（處理 JavaScript 渲染）
 const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
-  let browser;
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
@@ -435,8 +434,17 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
     
     const result = extractContent($, url);
     if (result && result.content.length >= 200) {
+      // 確保返回結果包含下一章鏈接（即使 extractContent 沒有提取到）
+      if (!result.nextChapterUrl) {
+        // 如果沒有下一章鏈接，嘗試再次提取
+        const nextChapterUrl = extractNextChapterUrl($, url);
+        if (nextChapterUrl) {
+          console.log(`✓ 從 Puppeteer HTML 中提取到下一章鏈接: ${nextChapterUrl}`);
+          result.nextChapterUrl = nextChapterUrl;
+        }
+      }
       // 記錄抓取的內容長度（用於調試）
-      console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字`);
+      console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字，下一章: ${result.nextChapterUrl || '無'}`);
       return result;
     }
     
