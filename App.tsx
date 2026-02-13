@@ -227,6 +227,8 @@ const App: React.FC = () => {
         title: data.title,
         sourceUrl: data.sourceUrl,
         nextChapterUrl: data.nextChapterUrl,
+        prevChapterUrl: data.prevChapterUrl,
+        chaptersCount: data.chapters?.length || 0,
         contentLength: data.content?.length
       });
       setNovel(data);
@@ -404,7 +406,7 @@ const App: React.FC = () => {
           chapters: data.chapters
         });
       }
-      console.log('設置標題:', data.title, '內容長度:', data.content?.length, '下一章:', data.nextChapterUrl);
+      console.log('設置標題:', data.title, '內容長度:', data.content?.length, '下一章:', data.nextChapterUrl, '上一章:', data.prevChapterUrl, '目錄:', data.chapters?.length || 0, '章');
       if (!data.content) {
         setWebError('無法取得內容，可改為直接貼上文字');
       }
