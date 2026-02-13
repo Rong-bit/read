@@ -469,9 +469,8 @@ const App: React.FC = () => {
       return;
     }
     setWebError(null);
-    // 估算總時長：讓文字高亮稍微超前語音，避免聲音讀完但高亮還落後
-    // 使用較快的估算速度，讓進度條和高亮移動更快
-    const charsPerSecond = 7.0; // 提高估算速度，讓高亮提前跟上語音
+    // 估算總時長：讓文字高亮跟上語音（聲音約快 2 字時再加快一點估算）
+    const charsPerSecond = 7.8; // 再提高一點，讓高亮跟上語音
     const estimatedSec = Math.max((text.length / charsPerSecond) / webRate, 1);
     webEstimatedDurationRef.current = estimatedSec;
     setWebSpeechTotalSec(estimatedSec);
@@ -775,8 +774,8 @@ const App: React.FC = () => {
                     <div className="space-y-3">
                       {(() => {
                         const totalSec = webSpeechTotalSec || 1;
-                        // 讓進度稍微超前一點，補償語音與高亮的時間差
-                        const progressBoost = 0.15; // 提前 15% 的進度
+                        // 讓進度超前一點，補償語音比高亮快約 2 字的情況
+                        const progressBoost = 0.28; // 提前約 28% 的進度
                         const progress = Math.min((webSpeechElapsed / totalSec) * (1 + progressBoost), 1);
                         const lines = webText.split('\n').filter(l => l.trim().length > 0);
                         const totalLines = Math.max(lines.length, 1);
