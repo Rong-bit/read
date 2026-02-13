@@ -335,6 +335,20 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
                     }
                   }
                   
+                  // 過濾非章節鏈接
+                  // 只保留符合章節URL模式的鏈接（例如：/0315678038/8096_XXX.html）
+                  const urlMatch = fullUrl.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
+                  if (!urlMatch) {
+                    continue; // 跳過不符合章節URL模式的鏈接
+                  }
+                  
+                  // 過濾掉明顯不是章節的標題
+                  const titleLower = title.toLowerCase();
+                  const excludeKeywords = ['排行榜', '登陸', '登錄', '登入', '註冊', '註冊', '首頁', 'home', 'ranking', 'login', 'signin', 'signup', 'register', '關於', 'about', '聯繫', 'contact'];
+                  if (excludeKeywords.some(keyword => titleLower.includes(keyword.toLowerCase()))) {
+                    continue;
+                  }
+                  
                   // 避免重複
                   if (!chapters.find(ch => ch.url === fullUrl)) {
                     chapters.push({ title, url: fullUrl });
@@ -343,6 +357,18 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
               }
               
               if (chapters.length > 0) {
+                // 按章節號排序
+                chapters.sort((a, b) => {
+                  const matchA = a.url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
+                  const matchB = b.url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
+                  if (matchA && matchB) {
+                    const numA = parseInt(matchA[3], 10);
+                    const numB = parseInt(matchB[3], 10);
+                    return numA - numB;
+                  }
+                  return 0;
+                });
+                
                 console.log(`從目錄頁提取到 ${chapters.length} 個章節`);
                 return chapters;
               }
