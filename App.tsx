@@ -57,6 +57,7 @@ const App: React.FC = () => {
   const [webList, setWebList] = useState<Array<{ id: string; title: string; text: string }>>([]);
   const [showShareHelp, setShowShareHelp] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
+  const [hasBackend, setHasBackend] = useState<boolean | null>(null);
 
   // --- Refs ---
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -136,6 +137,19 @@ const App: React.FC = () => {
       window.removeEventListener('offline', updateOnline);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isOnline) {
+      setHasBackend(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 3000);
+    fetch('/api/health', { signal: controller.signal, cache: 'no-store' })
+      .then((res) => setHasBackend(res.ok))
+      .catch(() => setHasBackend(false))
+      .finally(() => window.clearTimeout(timeoutId));
+  }, [isOnline]);
 
   const saveReadingProgress = (time: number) => {
     if (!novel) return;
@@ -351,10 +365,14 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      if (!res.ok) {
-        throw new Error('此版本缺少後端服務，無法抓取網址內容');
+      if (res.status === 404) {
+        setHasBackend(false);
+        throw new Error('未偵測到後端服務，無法抓取網址內容');
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || '抓取失敗，請改為直接貼上文字');
+      }
       setWebTitle(data.title || '');
       setWebText(data.content || '');
       if (!data.content) {
@@ -595,12 +613,16 @@ const App: React.FC = () => {
                     {webLoading ? '抓取中...' : '抓取內容'}
                   </button>
                 </div>
-                <div className="text-xs text-slate-500">
-                  GitHub Pages 為純前端，無法抓取網址；請改用貼文字朗讀。
-                </div>
-                <div className="text-xs text-slate-500">
-                  目前部署沒有後端代理，`/api/fetch-novel` 端點不存在，因此會顯示抓取失敗。
-                </div>
+                {hasBackend === false && (
+                  <>
+                    <div className="text-xs text-slate-500">
+                      未偵測到後端服務，`/api/fetch-novel` 端點無法使用，請改用貼文字朗讀。
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      若你使用 GitHub Pages 部署，純前端環境無法抓取網址。
+                    </div>
+                  </>
+                )}
                 {webError && (
                   <div className="text-xs text-orange-400">{webError}</div>
                 )}
