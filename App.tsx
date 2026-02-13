@@ -233,9 +233,14 @@ const App: React.FC = () => {
   };
 
   const handleNextChapter = () => {
-    // 不再支持下一章功能，因為不抓取內容
-    const url = novel?.sourceUrl ? getSafeOpenUrl(novel.sourceUrl) : null;
-    if (url) window.open(url, '_blank');
+    if (novel?.nextChapterUrl) {
+      // 如果有下一章链接，直接跳转
+      handleSearch(novel.nextChapterUrl);
+    } else if (novel?.sourceUrl) {
+      // 如果没有下一章链接，打开原页面
+      const url = getSafeOpenUrl(novel.sourceUrl);
+      if (url) window.open(url, '_blank');
+    }
   };
 
   const playAudio = async () => {

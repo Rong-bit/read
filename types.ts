@@ -3,6 +3,7 @@ export interface NovelContent {
   title: string;
   content: string;
   sourceUrl?: string;
+  nextChapterUrl?: string;
   groundingSources?: any[];
 }
 
