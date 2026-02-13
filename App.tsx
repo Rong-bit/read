@@ -651,7 +651,7 @@ const App: React.FC = () => {
           )}
 
           {readerMode === 'web' && (
-            <div className="space-y-6">
+            <div className={`space-y-6 ${(webIsSpeaking || webIsPaused) ? 'pb-24' : ''}`}>
               {!isOnline && (
                 <div className="bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs rounded-2xl px-4 py-3">
                   目前離線：無法抓取網址內容，但仍可貼上文字朗讀。
@@ -984,6 +984,36 @@ const App: React.FC = () => {
           <span className="text-slate-500 text-xs tabular-nums">
             {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')}
             {duration > 0 && ` / ${Math.floor(duration / 60)}:${(Math.floor(duration % 60)).toString().padStart(2, '0')}`}
+          </span>
+        </div>
+      )}
+
+      {/* Web 模式朗讀時固定底部控制列：隨時可暫停/停止 */}
+      {readerMode === 'web' && (webIsSpeaking || webIsPaused) && (
+        <div className="fixed bottom-0 left-0 right-0 z-[100] flex items-center justify-center gap-4 px-4 py-4 bg-slate-900/95 border-t border-white/10 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.4)] safe-area-pb">
+          <span className="text-slate-400 text-sm font-medium truncate max-w-[120px] md:max-w-[200px]" title={webTitle}>{webTitle || '朗讀中'}</span>
+          <button
+            type="button"
+            onClick={handleWebPlayPause}
+            className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg transition-colors"
+            title={webIsPaused ? '繼續' : '暫停'}
+          >
+            {webIsPaused ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleWebStop}
+            className="flex-shrink-0 w-10 h-10 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 transition-colors"
+            title="停止"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+          <span className="text-slate-500 text-xs tabular-nums">
+            {Math.floor(webSpeechElapsed)}s / {Math.floor(webSpeechTotalSec)}s
           </span>
         </div>
       )}
