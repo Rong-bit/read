@@ -811,8 +811,8 @@ const App: React.FC = () => {
                   value={webText}
                   onChange={(e) => setWebText(e.target.value)}
                   placeholder="貼上要朗讀的文字"
-                  rows={10}
-                  className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                  rows={16}
+                  className="w-full min-h-[320px] bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 text-[14px] leading-relaxed text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
                 <div className="flex flex-col md:flex-row md:items-center gap-4 pt-2">
                   <div className="flex items-center gap-3">
