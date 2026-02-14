@@ -12,6 +12,8 @@ const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
 const STORAGE_KEY_WEB_RATE = 'web_reader_rate';
 const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_WEB_LIST = 'web_reader_list';
+const STORAGE_KEY_GEMINI_API_KEY = 'gemini_reader_api_key';
+const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 
 function getNovelText(novel: NovelContent | null): string {
   if (!novel) return '';
@@ -56,6 +58,9 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState(true);
   const [hasBackend, setHasBackend] = useState<boolean | null>(null);
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [useAiReading, setUseAiReading] = useState(false);
+  const [webAiLoading, setWebAiLoading] = useState(false);
 
   // --- Refs ---
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -69,6 +74,7 @@ const App: React.FC = () => {
   const webSpeechPausedElapsedRef = useRef<number>(0);
   const webEstimatedDurationRef = useRef<number>(0);
   const webSpeechTickRef = useRef<number>(0);
+  const webAiPlayingRef = useRef(false);
   const [webSpeechElapsed, setWebSpeechElapsed] = useState(0);
   const [webSpeechTotalSec, setWebSpeechTotalSec] = useState(0);
 
@@ -101,6 +107,11 @@ const App: React.FC = () => {
       } catch {}
     }
 
+    const savedApiKey = localStorage.getItem(STORAGE_KEY_GEMINI_API_KEY);
+    if (savedApiKey != null) setGeminiApiKey(savedApiKey);
+    const savedUseAi = localStorage.getItem(STORAGE_KEY_USE_AI_READING);
+    if (savedUseAi === 'true') setUseAiReading(true);
+
     const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
     if (savedProgress) {
       const p = JSON.parse(savedProgress);
@@ -130,6 +141,14 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_WEB_LIST, JSON.stringify(webList));
   }, [webList]);
+
+  useEffect(() => {
+    if (geminiApiKey !== undefined) localStorage.setItem(STORAGE_KEY_GEMINI_API_KEY, geminiApiKey);
+  }, [geminiApiKey]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_USE_AI_READING, useAiReading ? 'true' : 'false');
+  }, [useAiReading]);
 
   useEffect(() => {
     const updateOnline = () => setIsOnline(navigator.onLine);
@@ -431,18 +450,30 @@ const App: React.FC = () => {
     }
   };
 
-  const handleWebPlayPause = () => {
-    if (typeof speechSynthesis === 'undefined') {
+  const handleWebPlayPause = async () => {
+    // 若正在以 AI 朗讀：暫停/繼續 AudioContext
+    if (webAiPlayingRef.current && audioContextRef.current) {
+      if (webIsSpeaking && !webIsPaused) {
+        await audioContextRef.current.suspend();
+        setWebIsPaused(true);
+      } else if (webIsPaused) {
+        await audioContextRef.current.resume();
+        setWebIsPaused(false);
+      }
+      return;
+    }
+
+    if (typeof speechSynthesis === 'undefined' && !useAiReading) {
       setWebError('此瀏覽器不支援語音朗讀');
       return;
     }
-    if (webIsSpeaking && !webIsPaused) {
+    if (webIsSpeaking && !webIsPaused && !webAiPlayingRef.current) {
       speechSynthesis.pause();
       webSpeechPausedElapsedRef.current = webSpeechElapsed;
       setWebIsPaused(true);
       return;
     }
-    if (webIsSpeaking && webIsPaused) {
+    if (webIsSpeaking && webIsPaused && !webAiPlayingRef.current) {
       speechSynthesis.resume();
       webSpeechStartTimeRef.current = Date.now() - webSpeechPausedElapsedRef.current * 1000;
       setWebIsPaused(false);
@@ -454,8 +485,60 @@ const App: React.FC = () => {
       return;
     }
     setWebError(null);
-    // 估算總時長：再調慢一點，補償高亮快約 3–4 字
-    const charsPerSecond = 5.2; // 高亮進度較慢，與語音對齊
+
+    // 使用 AI（Gemini）朗讀：未填 API Key 時使用預設（環境變數）
+    if (useAiReading) {
+      handleWebStop();
+      setWebAiLoading(true);
+      try {
+        const ctx = initAudioContext();
+        if (ctx.state === 'suspended') await ctx.resume();
+        if (sourceRef.current) sourceRef.current.stop();
+        const textToRead = text.slice(0, 4000);
+        const base64Audio = await generateSpeech(textToRead, 'Kore', geminiApiKey.trim() || undefined);
+        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = volume;
+        gainNodeRef.current = gainNode;
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.playbackRate.value = webRate;
+        source.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        source.onended = () => {
+          webAiPlayingRef.current = false;
+          setWebIsSpeaking(false);
+          setWebIsPaused(false);
+          setWebSpeechElapsed(0);
+        };
+        source.start(0);
+        sourceRef.current = source;
+        webAiPlayingRef.current = true;
+        setWebIsSpeaking(true);
+        setWebIsPaused(false);
+        setWebSpeechTotalSec(audioBuffer.duration);
+        setWebSpeechElapsed(0);
+        webSpeechStartTimeRef.current = Date.now();
+      } catch (err: any) {
+        const msg = err?.message ?? err?.toString?.() ?? '';
+        webAiPlayingRef.current = false;
+        setWebIsSpeaking(false);
+        setWebIsPaused(false);
+        setWebAiLoading(false);
+        if (msg.includes('API') || msg.includes('401') || msg.includes('403') || msg.includes('API key') || msg.includes('quota')) {
+          setWebError('AI 朗讀失敗：請在選單設定 Gemini API Key，或檢查配額');
+        } else {
+          setWebError(msg || 'AI 朗讀失敗，請稍後再試');
+        }
+        return;
+      } finally {
+        setWebAiLoading(false);
+      }
+      return;
+    }
+
+    // 瀏覽器語音朗讀
+    const charsPerSecond = 5.2;
     const estimatedSec = Math.max((text.length / charsPerSecond) / webRate, 1);
     webEstimatedDurationRef.current = estimatedSec;
     setWebSpeechTotalSec(estimatedSec);
@@ -488,6 +571,12 @@ const App: React.FC = () => {
   };
 
   const handleWebStop = () => {
+    if (webAiPlayingRef.current && sourceRef.current && audioContextRef.current) {
+      try {
+        sourceRef.current.stop();
+      } catch {}
+      webAiPlayingRef.current = false;
+    }
     if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
     setWebIsSpeaking(false);
     setWebIsPaused(false);
@@ -550,13 +639,17 @@ const App: React.FC = () => {
         onOpenBrowse={() => setIsBrowseOpen(true)}
         onOpenLibrary={() => setIsBrowseOpen(true)}
         onNewSearch={() => setShowSearch(true)}
-        onOpenUrlModal={() => { setIsUrlModalOpen(true); setIsMenuOpen(false); }}
+        onOpenUrlModal={() => { setWebUrl(''); setWebError(null); setIsUrlModalOpen(true); setIsMenuOpen(false); }}
         currentNovelTitle={novel?.title ?? webTitle}
         webRate={webRate}
         setWebRate={setWebRate}
         webVoice={webVoice}
         setWebVoice={setWebVoice}
         webVoices={webVoices}
+        geminiApiKey={geminiApiKey}
+        setGeminiApiKey={setGeminiApiKey}
+        useAiReading={useAiReading}
+        setUseAiReading={setUseAiReading}
       />
 
       {showResumeToast && (
@@ -662,10 +755,13 @@ const App: React.FC = () => {
         <button
           type="button"
           onClick={handleWebPlayPause}
-          className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg transition-colors"
-          title={webIsSpeaking && !webIsPaused ? '暫停' : webIsPaused ? '繼續' : '播放'}
+          disabled={webAiLoading}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 flex items-center justify-center text-white shadow-lg transition-colors"
+          title={webAiLoading ? 'AI 產生中…' : webIsSpeaking && !webIsPaused ? '暫停' : webIsPaused ? '繼續' : '播放'}
         >
-          {webIsSpeaking && !webIsPaused ? (
+          {webAiLoading ? (
+            <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-6.22-8.6" strokeLinecap="round"/></svg>
+          ) : webIsSpeaking && !webIsPaused ? (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
           ) : (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>

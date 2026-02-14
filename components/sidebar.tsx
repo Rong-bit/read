@@ -15,6 +15,10 @@ interface SidebarProps {
   webVoice?: string;
   setWebVoice?: (v: string) => void;
   webVoices?: SpeechSynthesisVoice[];
+  geminiApiKey?: string;
+  setGeminiApiKey?: (v: string) => void;
+  useAiReading?: boolean;
+  setUseAiReading?: (v: boolean) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -30,7 +34,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   setWebRate,
   webVoice = '',
   setWebVoice,
-  webVoices = []
+  webVoices = [],
+  geminiApiKey = '',
+  setGeminiApiKey,
+  useAiReading = false,
+  setUseAiReading
 }) => {
   return (
     <>
@@ -105,6 +113,31 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {setGeminiApiKey != null && (
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI 朗讀（Gemini）</div>
+              <input
+                type="password"
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                placeholder="API Key 選填，未填則使用預設"
+                className="w-full bg-slate-800 text-sm rounded-xl px-3 py-2 focus:outline-none border border-white/5 text-white placeholder:text-slate-500"
+                autoComplete="off"
+              />
+              {setUseAiReading != null && (
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useAiReading}
+                    onChange={(e) => setUseAiReading(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-300">使用 AI 朗讀</span>
+                </label>
+              )}
             </div>
           )}
 

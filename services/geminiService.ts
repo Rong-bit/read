@@ -2,8 +2,11 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { NovelContent } from "../types.ts";
 
-const getAI = () => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || "";
+const getDefaultApiKey = () =>
+  import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || "";
+
+const getAI = (overrideApiKey?: string) => {
+  const apiKey = (overrideApiKey && overrideApiKey.trim()) || getDefaultApiKey();
   return new GoogleGenAI({ apiKey });
 };
 
@@ -107,8 +110,12 @@ const extractTitleFromUrl = (url: string): string => {
   }
 };
 
-export const generateSpeech = async (text: string, voiceName: string = 'Kore'): Promise<string> => {
-  const ai = getAI();
+export const generateSpeech = async (
+  text: string,
+  voiceName: string = 'Kore',
+  apiKey?: string
+): Promise<string> => {
+  const ai = getAI(apiKey);
   
   // 長篇朗讀優化
   const response = await ai.models.generateContent({
