@@ -589,7 +589,7 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
       waitUntil: 'networkidle2',
       timeout: 30000
     });
-    await page.waitForTimeout(2000);
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     const html = await page.content();
     const $ = cheerio.load(html);
