@@ -1,16 +1,29 @@
 import * as cheerio from 'cheerio';
 import * as OpenCC from 'opencc-js';
 
-const s2t = OpenCC.Converter({ from: 'cn', to: 'tw' });
+// 簡體轉繁體的轉換器
+const s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' });
 
-function simplifiedToTraditional<T extends { title: string; content: string; chapters?: { title: string; url: string }[] }>(result: T): T {
+/** 檢測是否可能為簡體中文（含簡體特有字） */
+const isLikelySimplified = (text: string): boolean =>
+  /[国语这说们会时发无为经过还与来对]/u.test(text);
+
+/** 將簡體中文轉為繁體 */
+const toTraditional = (text: string): string => s2tConverter(text);
+
+/** 對抓取結果套用簡轉繁 */
+const applySimplifiedToTraditional = (result: NovelResult): NovelResult => {
+  if (!result.content || !isLikelySimplified(result.content)) return result;
   return {
     ...result,
-    title: s2t(result.title),
-    content: s2t(result.content),
-    chapters: result.chapters?.map((ch) => ({ ...ch, title: s2t(ch.title) })),
+    title: toTraditional(result.title),
+    content: toTraditional(result.content),
+    chapters: result.chapters?.map((ch) => ({
+      ...ch,
+      title: toTraditional(ch.title),
+    })),
   };
-}
+};
 
 export interface ChapterItem {
   title: string;
@@ -638,7 +651,7 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
       }
       
       console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字，下一章: ${result.nextChapterUrl || '無'}，上一章: ${result.prevChapterUrl || '無'}`);
-      return simplifiedToTraditional(result);
+      return result;
     }
 
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字，可能是摘要或抓取失敗）`);
@@ -681,19 +694,23 @@ const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
     console.log('提取目錄失敗（不影響主流程）:', error);
   }
   
-  return simplifiedToTraditional(result);
+  return result;
 };
 
 export const fetchNovelFromUrl = async (url: string, currentTitle?: string): Promise<NovelResult> => {
   try {
+    let result: NovelResult;
     if (!needsPuppeteer(url)) {
       try {
-        return await fetchWithCheerio(url);
+        result = await fetchWithCheerio(url);
       } catch (error) {
         console.log('Cheerio 抓取失敗，嘗試使用 Puppeteer:', error);
+        result = await fetchWithPuppeteer(url);
       }
+    } else {
+      result = await fetchWithPuppeteer(url);
     }
-    return await fetchWithPuppeteer(url);
+    return applySimplifiedToTraditional(result);
   } catch (error: any) {
     throw new Error(`抓取失敗: ${error.message}`);
   }
