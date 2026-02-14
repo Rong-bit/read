@@ -775,16 +775,6 @@ const App: React.FC = () => {
               )}
 
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-slate-300 font-bold">可直接貼上文字</div>
-                  <button
-                    type="button"
-                    onClick={handleWebPaste}
-                    className="text-xs text-indigo-400 hover:text-indigo-300"
-                  >
-                    從剪貼簿貼上
-                  </button>
-                </div>
                 <textarea
                   value={webText}
                   onChange={(e) => setWebText(e.target.value)}
