@@ -521,14 +521,17 @@ const App: React.FC = () => {
         webSpeechStartTimeRef.current = Date.now();
       } catch (err: any) {
         const msg = err?.message ?? err?.toString?.() ?? '';
+        console.error('AI 朗讀錯誤:', err);
         webAiPlayingRef.current = false;
         setWebIsSpeaking(false);
         setWebIsPaused(false);
         setWebAiLoading(false);
-        if (msg.includes('API') || msg.includes('401') || msg.includes('403') || msg.includes('API key') || msg.includes('quota')) {
-          setWebError('AI 朗讀失敗：請在選單設定 Gemini API Key，或檢查配額');
+        if (msg.includes('API') || msg.includes('401') || msg.includes('403') || msg.includes('API key') || msg.includes('quota') || msg.includes('INVALID_ARGUMENT')) {
+          setWebError('AI 朗讀失敗：請在選單設定有效的 Gemini API Key，或檢查 API 配額。詳情請打開開發者工具 (F12) 查看 Console。');
+        } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed to fetch')) {
+          setWebError('AI 朗讀失敗：網路錯誤，請檢查連線後再試。');
         } else {
-          setWebError(msg || 'AI 朗讀失敗，請稍後再試');
+          setWebError(msg ? `AI 朗讀失敗：${msg}` : 'AI 朗讀失敗，請稍後再試。可打開開發者工具 (F12) → Console 查看詳細錯誤。');
         }
         return;
       } finally {
@@ -656,6 +659,23 @@ const App: React.FC = () => {
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-indigo-600 text-white px-5 py-2.5 rounded-full shadow-2xl animate-fade-in-up text-sm font-bold flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
           已自動恢復上次閱讀進度
+        </div>
+      )}
+
+      {webError && (
+        <div className="mx-4 mt-4 mb-0 rounded-2xl bg-red-900/30 border border-red-500/40 px-4 py-3 flex items-start gap-3">
+          <span className="text-red-400 flex-shrink-0 mt-0.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          </span>
+          <p className="text-sm text-red-200 flex-1">{webError}</p>
+          <button
+            type="button"
+            onClick={() => setWebError(null)}
+            className="text-red-400 hover:text-red-300 flex-shrink-0 p-1"
+            aria-label="關閉"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
         </div>
       )}
 
