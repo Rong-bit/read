@@ -2,8 +2,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Header from './components/header.tsx';
 import Sidebar from './components/sidebar.tsx';
-import NovelInput from './components/novelinput.tsx';
-import NovelDisplay from './components/noveldisplay.tsx';
 import { NovelContent, ReaderState } from './types.ts';
 import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
@@ -42,7 +40,6 @@ const App: React.FC = () => {
   const [fontSize, setFontSize] = useState(18);
   const [theme, setTheme] = useState<'dark' | 'sepia' | 'slate'>('dark');
   const [showResumeToast, setShowResumeToast] = useState(false);
-  const [readerMode, setReaderMode] = useState<'novel' | 'web'>('novel');
 
   const [webUrl, setWebUrl] = useState('');
   const [webTitle, setWebTitle] = useState('');
@@ -55,10 +52,10 @@ const App: React.FC = () => {
   const [webVoices, setWebVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [webVoice, setWebVoice] = useState('');
   const [webList, setWebList] = useState<Array<{ id: string; title: string; text: string }>>([]);
-  const [showShareHelp, setShowShareHelp] = useState(true);
   const [showWebChapters, setShowWebChapters] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [hasBackend, setHasBackend] = useState<boolean | null>(null);
+  const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
 
   // --- Refs ---
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -194,15 +191,6 @@ const App: React.FC = () => {
     }
     return () => cancelAnimationFrame(requestRef.current);
   }, [state, duration, playbackRate]);
-
-  useEffect(() => {
-    if (readerMode !== 'web') {
-      if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
-      setWebIsSpeaking(false);
-      setWebIsPaused(false);
-      webUtteranceRef.current = null;
-    }
-  }, [readerMode]);
 
   useEffect(() => {
     if (typeof speechSynthesis === 'undefined') return;
@@ -373,35 +361,31 @@ const App: React.FC = () => {
     }
   };
 
-  const handleWebFetch = async () => {
-    const url = normalizeUrl(webUrl);
-    console.log('handleWebFetch 被調用，URL:', url);
+  const handleWebFetch = async (overrideUrl?: string): Promise<boolean> => {
+    const url = normalizeUrl(overrideUrl ?? webUrl);
     if (!url) {
       setWebError('請輸入正確的網址');
-      return;
+      return false;
     }
     setWebError(null);
     setWebLoading(true);
     try {
-      console.log('發送請求到 /api/fetch-novel，URL:', url);
       const res = await fetch('/api/fetch-novel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      console.log('收到響應，狀態:', res.status, res.statusText);
       if (res.status === 404) {
         setHasBackend(false);
         throw new Error('未偵測到後端服務，無法抓取網址內容');
       }
       const data = await res.json().catch(() => null);
-      console.log('解析後的數據:', data);
       if (!res.ok) {
         throw new Error(data?.error || '抓取失敗，請改為直接貼上文字');
       }
       setWebTitle(data.title || '');
       setWebText(data.content || '');
-      // 同時設置 novel 狀態，以便在 web 模式下也能使用下一章和上一章功能
+      setWebUrl(url);
       if (data.title || data.content || data.nextChapterUrl || data.prevChapterUrl || data.chapters) {
         setNovel({
           title: data.title || '',
@@ -412,10 +396,10 @@ const App: React.FC = () => {
           chapters: data.chapters
         });
       }
-      console.log('設置標題:', data.title, '內容長度:', data.content?.length, '下一章:', data.nextChapterUrl, '上一章:', data.prevChapterUrl, '目錄:', data.chapters?.length || 0, '章');
       if (!data.content) {
         setWebError('無法取得內容，可改為直接貼上文字');
       }
+      return true;
     } catch (err) {
       console.error('handleWebFetch 錯誤:', err);
       const msg =
@@ -423,6 +407,7 @@ const App: React.FC = () => {
           ? err.message
           : '抓取失敗，請改為直接貼上文字';
       setWebError(msg || '抓取失敗，請改為直接貼上文字');
+      return false;
     } finally {
       setWebLoading(false);
     }
@@ -565,7 +550,13 @@ const App: React.FC = () => {
         onOpenBrowse={() => setIsBrowseOpen(true)}
         onOpenLibrary={() => setIsBrowseOpen(true)}
         onNewSearch={() => setShowSearch(true)}
-        currentNovelTitle={novel?.title}
+        onOpenUrlModal={() => { setIsUrlModalOpen(true); setIsMenuOpen(false); }}
+        currentNovelTitle={novel?.title ?? webTitle}
+        webRate={webRate}
+        setWebRate={setWebRate}
+        webVoice={webVoice}
+        setWebVoice={setWebVoice}
+        webVoices={webVoices}
       />
 
       {showResumeToast && (
@@ -577,84 +568,24 @@ const App: React.FC = () => {
 
       <main className="flex-1 container mx-auto px-4 md:px-6">
         <div className="max-w-4xl mx-auto pt-6 md:pt-10">
-          <div className="flex justify-center mb-8">
-            <div className="inline-flex bg-white/5 rounded-full p-1 border border-white/10">
-              <button
-                type="button"
-                onClick={() => setReaderMode('novel')}
-                className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${readerMode === 'novel' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
-              >
-                小說閱讀
-              </button>
-              <button
-                type="button"
-                onClick={() => setReaderMode('web')}
-                className={`px-4 py-2 text-xs font-bold rounded-full transition-all ${readerMode === 'web' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
-              >
-                手機朗讀器
-              </button>
-            </div>
-          </div>
-          
-          {/* 只有在需要搜尋或尚未載入小說時顯示標題與輸入框 */}
-          {readerMode === 'novel' && (showSearch || !novel) && (
-            <div className="animate-fade-in-up">
-              <div className="text-center mb-6">
-                <h1 className="text-3xl md:text-5xl font-extrabold mb-3 tracking-tight">
-                  聆聽您最 <span className="text-indigo-500 italic">喜愛</span> 的小說。
-                </h1>
-              </div>
-
-              <NovelInput onSearch={handleSearch} isLoading={state === ReaderState.FETCHING} />
-
-              {novel && (
-                <div className="flex justify-center mb-8">
-                  <button 
-                    onClick={() => setShowSearch(false)}
-                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-2 px-4 py-2 bg-indigo-500/10 rounded-full border border-indigo-500/20 transition-all"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                    返回閱讀模式
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {readerMode === 'novel' && error && (
-            <div className="max-w-xl mx-auto mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-xl text-red-400 text-sm text-center">
-              {error}
-            </div>
-          )}
-
-          {readerMode === 'novel' && (
-            <div style={{ fontSize: `${fontSize}px` }}>
-              <NovelDisplay 
-                novel={novel} 
-                isLoading={state === ReaderState.FETCHING} 
-                onNextChapter={handleNextChapter}
-              />
-              {/* 調試信息 */}
-              {novel && (
-                <div className="mt-4 p-4 bg-slate-800/50 rounded-xl text-xs text-slate-400">
-                  <div>nextChapterUrl: {novel.nextChapterUrl || '未找到'}</div>
-                  <div>sourceUrl: {novel.sourceUrl}</div>
-                  <div>title: {novel.title}</div>
-                  <div>content length: {novel.content?.length || 0}</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {readerMode === 'web' && (
-            <div className={`space-y-6 ${(webIsSpeaking || webIsPaused) ? 'pb-24' : ''}`}>
+            <div className="space-y-6 pb-28">
               {!isOnline && (
                 <div className="bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs rounded-2xl px-4 py-3">
                   目前離線：無法抓取網址內容，但仍可貼上文字朗讀。
                 </div>
               )}
+
+              {/* 小說標題（與小說閱讀方式一致） */}
+              {(webTitle || novel?.title) && (
+                <header className="mb-6 text-center">
+                  <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
+                    {webTitle || novel?.title || '小說'}
+                  </h2>
+                  <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full mt-4" />
+                </header>
+              )}
               
-              {/* 章節目錄（web 模式） */}
+              {/* 章節目錄（可摺疊） */}
               {novel?.chapters && novel.chapters.length > 0 && (
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6">
                   <div className="flex items-center justify-between mb-4">
@@ -675,10 +606,7 @@ const App: React.FC = () => {
                           <button
                             key={index}
                             type="button"
-                            onClick={() => {
-                              setWebUrl(chapter.url);
-                              handleWebFetch();
-                            }}
+                            onClick={() => handleWebFetch(chapter.url)}
                             className={`px-4 py-2 rounded-lg text-sm text-left transition-all ${
                               isCurrentChapter
                                 ? 'bg-indigo-600 text-white font-bold'
@@ -697,59 +625,6 @@ const App: React.FC = () => {
 
               <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6 space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-slate-300 font-bold">手機快速分享貼上</div>
-                  <button
-                    type="button"
-                    onClick={() => setShowShareHelp(!showShareHelp)}
-                    className="text-xs text-slate-400 hover:text-slate-200"
-                  >
-                    {showShareHelp ? '收起' : '展開'}
-                  </button>
-                </div>
-                {showShareHelp && (
-                  <div className="text-xs text-slate-400 space-y-2">
-                    <div>iOS：在原頁面點「分享」→「拷貝」→ 回此頁按「從剪貼簿貼上」。</div>
-                    <div>Android：在原頁面點「分享」→「複製連結或文字」→ 回此頁按「從剪貼簿貼上」。</div>
-                    <div>若剪貼簿無法讀取，請手動長按貼上。</div>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6 space-y-4">
-                <div className="text-sm text-slate-300 font-bold">網址抓取（需後端支援）</div>
-                <div className="flex flex-col md:flex-row gap-3">
-                  <input
-                    value={webUrl}
-                    onChange={(e) => setWebUrl(e.target.value)}
-                    placeholder="貼上網址（例如 https://example.com）"
-                    className="flex-1 bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleWebFetch}
-                    disabled={webLoading}
-                    className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold disabled:opacity-50"
-                  >
-                    {webLoading ? '抓取中...' : '抓取內容'}
-                  </button>
-                </div>
-                {hasBackend === false && (
-                  <>
-                    <div className="text-xs text-slate-500">
-                      未偵測到後端服務，`/api/fetch-novel` 端點無法使用，請改用貼文字朗讀。
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      若你使用 GitHub Pages 部署，純前端環境無法抓取網址。
-                    </div>
-                  </>
-                )}
-                {webError && (
-                  <div className="text-xs text-orange-400">{webError}</div>
-                )}
-              </div>
-
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6 space-y-3">
-                <div className="flex items-center justify-between">
                   <div className="text-sm text-slate-300 font-bold">可直接貼上文字</div>
                   <button
                     type="button"
@@ -759,208 +634,60 @@ const App: React.FC = () => {
                     從剪貼簿貼上
                   </button>
                 </div>
-                {webTitle && (
-                  <div className="text-xs text-slate-500">標題：{webTitle}</div>
-                )}
-                {/* 上一章和下一章按鈕（web 模式） */}
-                {(novel?.prevChapterUrl || novel?.nextChapterUrl) && (
-                  <div className="mb-4 flex flex-wrap gap-3 justify-center">
-                    {novel?.prevChapterUrl && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (novel.prevChapterUrl) {
-                            setWebUrl(novel.prevChapterUrl);
-                            handleWebFetch();
-                          }
-                        }}
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-bold rounded-xl shadow-lg shadow-slate-600/30 transition-all hover:scale-105 active:scale-95"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M19 12H5M12 19l-7-7 7-7"/>
-                        </svg>
-                        <span>上一章</span>
-                      </button>
-                    )}
-                    {novel?.nextChapterUrl && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (novel.nextChapterUrl) {
-                            setWebUrl(novel.nextChapterUrl);
-                            handleWebFetch();
-                          }
-                        }}
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
-                      >
-                        <span>下一章</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M5 12h14M12 5l7 7-7 7"/>
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                )}
                 <textarea
                   value={webText}
                   onChange={(e) => setWebText(e.target.value)}
                   placeholder="貼上要朗讀的文字"
                   rows={16}
-                  className="w-full min-h-[320px] bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 text-[20px] leading-relaxed text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="w-full min-h-[calc(100vh-16rem)] bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 text-[24px] leading-relaxed text-slate-100 focus:outline-none focus:border-indigo-500"
                 />
-                <div className="flex flex-col md:flex-row md:items-center gap-4 pt-2">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleWebPlayPause}
-                      className="px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold"
-                    >
-                      {webIsSpeaking && !webIsPaused ? '暫停' : webIsPaused ? '繼續' : '播放'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleWebStop}
-                      className="px-4 py-2 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-bold"
-                    >
-                      停止
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleWebAddToList}
-                      className="px-4 py-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold"
-                    >
-                      加入清單
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-slate-400 font-bold">{webRate.toFixed(1)}x</span>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="2.0"
-                      step="0.1"
-                      value={webRate}
-                      onChange={(e) => setWebRate(parseFloat(e.target.value))}
-                      className="w-40 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400 font-bold">語音</span>
-                    <select
-                      value={webVoice}
-                      onChange={(e) => setWebVoice(e.target.value)}
-                      className="bg-slate-800 text-xs font-bold rounded-lg px-2 py-1 focus:outline-none border border-white/5 text-white max-w-[180px]"
-                    >
-                      {webVoices.length === 0 && <option value="">預設</option>}
-                      {webVoices.map(v => (
-                        <option key={v.name} value={v.name}>
-                          {v.name} ({v.lang || 'unknown'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
               </div>
 
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6 space-y-3">
-                <div className="text-sm text-slate-300 font-bold">朗讀清單</div>
-                {webList.length === 0 && (
-                  <div className="text-xs text-slate-500">尚無項目，請先加入清單。</div>
-                )}
-                {webList.length > 0 && (
-                  <div className="space-y-2">
-                    {webList.map(item => (
-                      <div key={item.id} className="flex items-center justify-between gap-3 bg-slate-900/40 border border-white/5 rounded-xl px-3 py-2">
-                        <div className="text-xs text-slate-200 truncate flex-1">{item.title}</div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleWebLoadFromList(item.id)}
-                            className="text-xs text-indigo-400 hover:text-indigo-300"
-                          >
-                            載入
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleWebDeleteFromList(item.id)}
-                            className="text-xs text-slate-400 hover:text-slate-200"
-                          >
-                            刪除
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
-          )}
         </div>
       </main>
 
-      {/* 固定底部播放列 */}
-      {readerMode === 'novel' && (
-        <div className="fixed bottom-0 left-0 right-0 z-[100] flex items-center justify-center gap-4 px-4 py-4 bg-slate-900/95 border-t border-white/10 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.4)]">
-          <span className="text-slate-400 text-sm font-medium truncate max-w-[120px] md:max-w-[200px]" title={novel?.title}>{novel?.title || '未選書'}</span>
-          <button
-            type="button"
-            onClick={handlePlayPause}
-            disabled={state === ReaderState.READING}
-            className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-white shadow-lg transition-colors"
-            title={state === ReaderState.READING ? '正在產生語音…' : state === ReaderState.PLAYING ? '暫停' : '播放'}
-          >
-            {state === ReaderState.READING ? (
-              <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-6.22-8.6" strokeLinecap="round"/></svg>
-            ) : state === ReaderState.PLAYING ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={handleStop}
-            className="flex-shrink-0 w-10 h-10 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 transition-colors"
-            title="停止"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-          </button>
-          <span className="text-slate-500 text-xs tabular-nums">
-            {Math.floor(currentTime / 60)}:{(Math.floor(currentTime % 60)).toString().padStart(2, '0')}
-            {duration > 0 && ` / ${Math.floor(duration / 60)}:${(Math.floor(duration % 60)).toString().padStart(2, '0')}`}
-          </span>
-        </div>
-      )}
-
-      {/* Web 模式朗讀時固定底部控制列：隨時可暫停/停止 */}
-      {readerMode === 'web' && (webIsSpeaking || webIsPaused) && (
-        <div className="fixed bottom-0 left-0 right-0 z-[100] flex items-center justify-center gap-4 px-4 py-4 bg-slate-900/95 border-t border-white/10 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.4)] safe-area-pb">
-          <span className="text-slate-400 text-sm font-medium truncate max-w-[120px] md:max-w-[200px]" title={webTitle}>{webTitle || '朗讀中'}</span>
-          <button
-            type="button"
-            onClick={handleWebPlayPause}
-            className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg transition-colors"
-            title={webIsPaused ? '繼續' : '暫停'}
-          >
-            {webIsPaused ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={handleWebStop}
-            className="flex-shrink-0 w-10 h-10 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 transition-colors"
-            title="停止"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-          </button>
-          <span className="text-slate-500 text-xs tabular-nums">
-            {Math.floor(webSpeechElapsed)}s / {Math.floor(webSpeechTotalSec)}s
-          </span>
-        </div>
-      )}
+      {/* 固定底部列：上一頁、播放/暫停、停止、下一頁，永遠顯示 */}
+      <div className="fixed bottom-0 left-0 right-0 z-[100] flex items-center justify-center gap-2 sm:gap-4 px-2 py-4 bg-slate-900/95 border-t border-white/10 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.4)] safe-area-pb">
+        <button
+          type="button"
+          onClick={() => novel?.prevChapterUrl && handleWebFetch(novel.prevChapterUrl)}
+          disabled={!novel?.prevChapterUrl}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-slate-300 transition-colors"
+          title="上一頁"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <button
+          type="button"
+          onClick={handleWebPlayPause}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg transition-colors"
+          title={webIsSpeaking && !webIsPaused ? '暫停' : webIsPaused ? '繼續' : '播放'}
+        >
+          {webIsSpeaking && !webIsPaused ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={handleWebStop}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 transition-colors"
+          title="停止"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => novel?.nextChapterUrl && handleWebFetch(novel.nextChapterUrl)}
+          disabled={!novel?.nextChapterUrl}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-slate-300 transition-colors"
+          title="下一頁"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
 
       {/* Settings Modal */}
       {isSettingsOpen && (
@@ -992,6 +719,43 @@ const App: React.FC = () => {
                 </a>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 網址抓取 Modal */}
+      {isUrlModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsUrlModalOpen(false)}>
+          <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-[2rem] p-8 shadow-2xl text-slate-100 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">貼上網址</h2>
+              <button type="button" onClick={() => setIsUrlModalOpen(false)} className="text-slate-400 hover:text-white p-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+            <input
+              value={webUrl}
+              onChange={(e) => setWebUrl(e.target.value)}
+              placeholder="貼上網址（例如 https://example.com）"
+              className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 mb-4"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await handleWebFetch();
+                if (ok) setIsUrlModalOpen(false);
+              }}
+              disabled={webLoading}
+              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold disabled:opacity-50"
+            >
+              {webLoading ? '抓取中...' : '抓取內容'}
+            </button>
+            {hasBackend === false && (
+              <p className="mt-3 text-xs text-slate-500">未偵測到後端服務，請改用貼文字朗讀。</p>
+            )}
+            {webError && (
+              <p className="mt-3 text-xs text-orange-400">{webError}</p>
+            )}
           </div>
         </div>
       )}
