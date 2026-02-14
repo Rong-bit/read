@@ -157,7 +157,7 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
       {viewMode === 'text' && novel.content && (
         <div className="mb-8">
           <div 
-            className="bg-slate-900/60 border border-slate-700/50 rounded-2xl p-8 md:p-12 max-h-[800px] overflow-y-auto"
+            className="p-8 md:p-12 max-h-[800px] overflow-y-auto"
             id="text-reader-container"
           >
             <div className="prose prose-invert max-w-none leading-relaxed">
@@ -180,7 +180,7 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
       {/* Iframe 嵌入模式：僅在網址有效時嵌入，避免 Safari 顯示「網址無效」 */}
       {viewMode === 'iframe' && !iframeError && hasValidUrl && (
         <div className="mb-8">
-          <div className="relative w-full h-[600px] md:h-[800px] rounded-2xl overflow-hidden border border-slate-700/50 bg-slate-900/50 shadow-2xl">
+          <div className="relative w-full h-[600px] md:h-[800px] overflow-hidden">
             <iframe
               src={safeUrl!}
               className="w-full h-full"
