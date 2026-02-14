@@ -23,6 +23,26 @@ function getNovelText(novel: NovelContent | null): string {
   return '';
 }
 
+/** 將長文依段落與字數上限拆成多段，供 TTS 一段一段合成 */
+function splitTextForTTS(text: string, maxCharsPerSegment: number = 1200): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const segments: string[] = [];
+  const paragraphs = trimmed.split(/\n\n+/);
+  for (const p of paragraphs) {
+    const block = p.trim();
+    if (!block) continue;
+    if (block.length <= maxCharsPerSegment) {
+      segments.push(block);
+    } else {
+      for (let i = 0; i < block.length; i += maxCharsPerSegment) {
+        segments.push(block.slice(i, i + maxCharsPerSegment));
+      }
+    }
+  }
+  return segments.length > 0 ? segments : [trimmed.slice(0, maxCharsPerSegment)];
+}
+
 const App: React.FC = () => {
   // --- States ---
   const [novel, setNovel] = useState<NovelContent | null>(null);
@@ -486,57 +506,75 @@ const App: React.FC = () => {
     }
     setWebError(null);
 
-    // 使用 AI（Gemini）朗讀：未填 API Key 時使用預設（環境變數）
+    // 使用 AI（Gemini）朗讀：分段合成、依序播放
     if (useAiReading) {
       handleWebStop();
+      const segments = splitTextForTTS(text, 1200);
+      if (segments.length === 0) {
+        setWebError('沒有可朗讀的內容');
+        return;
+      }
       setWebAiLoading(true);
-      try {
-        const ctx = initAudioContext();
-        if (ctx.state === 'suspended') await ctx.resume();
-        if (sourceRef.current) sourceRef.current.stop();
-        const textToRead = text.slice(0, 4000);
-        const base64Audio = await generateSpeech(textToRead, 'Kore', geminiApiKey.trim() || undefined);
-        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-        const gainNode = ctx.createGain();
-        gainNode.gain.value = volume;
-        gainNodeRef.current = gainNode;
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.playbackRate.value = webRate;
-        source.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        source.onended = () => {
+      const ctx = initAudioContext();
+      if (ctx.state === 'suspended') await ctx.resume();
+      if (sourceRef.current) sourceRef.current.stop();
+      const apiKeyArg = geminiApiKey.trim() || undefined;
+      const playNextSegment = async (index: number) => {
+        if (!webAiPlayingRef.current) return;
+        if (index >= segments.length) {
           webAiPlayingRef.current = false;
           setWebIsSpeaking(false);
           setWebIsPaused(false);
           setWebSpeechElapsed(0);
-        };
-        source.start(0);
-        sourceRef.current = source;
-        webAiPlayingRef.current = true;
-        setWebIsSpeaking(true);
-        setWebIsPaused(false);
-        setWebSpeechTotalSec(audioBuffer.duration);
-        setWebSpeechElapsed(0);
-        webSpeechStartTimeRef.current = Date.now();
-      } catch (err: any) {
-        const msg = err?.message ?? err?.toString?.() ?? '';
-        console.error('AI 朗讀錯誤:', err);
-        webAiPlayingRef.current = false;
-        setWebIsSpeaking(false);
-        setWebIsPaused(false);
-        setWebAiLoading(false);
-        if (msg.includes('API') || msg.includes('401') || msg.includes('403') || msg.includes('API key') || msg.includes('quota') || msg.includes('INVALID_ARGUMENT')) {
-          setWebError('AI 朗讀失敗：請在選單設定有效的 Gemini API Key，或檢查 API 配額。詳情請打開開發者工具 (F12) 查看 Console。');
-        } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed to fetch')) {
-          setWebError('AI 朗讀失敗：網路錯誤，請檢查連線後再試。');
-        } else {
-          setWebError(msg ? `AI 朗讀失敗：${msg}` : 'AI 朗讀失敗，請稍後再試。可打開開發者工具 (F12) → Console 查看詳細錯誤。');
+          setWebAiLoading(false);
+          return;
         }
-        return;
-      } finally {
-        setWebAiLoading(false);
-      }
+        try {
+          const chunk = segments[index];
+          const base64Audio = await generateSpeech(chunk, 'Kore', apiKeyArg);
+          if (!webAiPlayingRef.current) return;
+          const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+          if (!webAiPlayingRef.current) return;
+          const gainNode = ctx.createGain();
+          gainNode.gain.value = volume;
+          gainNodeRef.current = gainNode;
+          const source = ctx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.playbackRate.value = webRate;
+          source.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          source.onended = () => {
+            if (!webAiPlayingRef.current) return;
+            playNextSegment(index + 1);
+          };
+          source.start(0);
+          sourceRef.current = source;
+          if (index === 0) {
+            webAiPlayingRef.current = true;
+            setWebIsSpeaking(true);
+            setWebIsPaused(false);
+            setWebSpeechTotalSec(audioBuffer.duration * segments.length);
+            setWebSpeechElapsed(0);
+            webSpeechStartTimeRef.current = Date.now();
+            setWebAiLoading(false);
+          }
+        } catch (err: any) {
+          const msg = err?.message ?? err?.toString?.() ?? '';
+          console.error('AI 朗讀錯誤:', err);
+          webAiPlayingRef.current = false;
+          setWebIsSpeaking(false);
+          setWebIsPaused(false);
+          setWebAiLoading(false);
+          if (msg.includes('API') || msg.includes('401') || msg.includes('403') || msg.includes('API key') || msg.includes('quota') || msg.includes('INVALID_ARGUMENT')) {
+            setWebError('AI 朗讀失敗：請在選單設定有效的 Gemini API Key，或檢查 API 配額。');
+          } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed to fetch')) {
+            setWebError('AI 朗讀失敗：網路錯誤，請檢查連線後再試。');
+          } else {
+            setWebError(msg ? `AI 朗讀失敗：${msg}` : 'AI 朗讀失敗，請稍後再試。');
+          }
+        }
+      };
+      playNextSegment(0);
       return;
     }
 
