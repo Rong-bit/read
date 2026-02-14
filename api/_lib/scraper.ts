@@ -1,29 +1,4 @@
 import * as cheerio from 'cheerio';
-import * as OpenCC from 'opencc-js';
-
-// 簡體轉繁體的轉換器
-const s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' });
-
-/** 檢測是否可能為簡體中文（含簡體特有字） */
-const isLikelySimplified = (text: string): boolean =>
-  /[国语这说们会时发无为经过还与来对]/u.test(text);
-
-/** 將簡體中文轉為繁體 */
-const toTraditional = (text: string): string => s2tConverter(text);
-
-/** 對抓取結果套用簡轉繁 */
-const applySimplifiedToTraditional = (result: NovelResult): NovelResult => {
-  if (!result.content || !isLikelySimplified(result.content)) return result;
-  return {
-    ...result,
-    title: toTraditional(result.title),
-    content: toTraditional(result.content),
-    chapters: result.chapters?.map((ch) => ({
-      ...ch,
-      title: toTraditional(ch.title),
-    })),
-  };
-};
 
 export interface ChapterItem {
   title: string;
@@ -699,18 +674,14 @@ const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
 
 export const fetchNovelFromUrl = async (url: string, currentTitle?: string): Promise<NovelResult> => {
   try {
-    let result: NovelResult;
     if (!needsPuppeteer(url)) {
       try {
-        result = await fetchWithCheerio(url);
+        return await fetchWithCheerio(url);
       } catch (error) {
         console.log('Cheerio 抓取失敗，嘗試使用 Puppeteer:', error);
-        result = await fetchWithPuppeteer(url);
       }
-    } else {
-      result = await fetchWithPuppeteer(url);
     }
-    return applySimplifiedToTraditional(result);
+    return await fetchWithPuppeteer(url);
   } catch (error: any) {
     throw new Error(`抓取失敗: ${error.message}`);
   }
