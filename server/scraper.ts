@@ -426,8 +426,8 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
       timeout: 30000 
     });
     
-    // 等待內容載入
-    await page.waitForTimeout(2000);
+    // 等待內容載入（Puppeteer v22+ 已移除 waitForTimeout，改用 Promise + setTimeout）
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     const html = await page.content();
     const $ = cheerio.load(html);
