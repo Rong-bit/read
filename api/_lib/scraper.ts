@@ -1,4 +1,16 @@
 import * as cheerio from 'cheerio';
+import * as OpenCC from 'opencc-js';
+
+const s2t = OpenCC.Converter({ from: 'cn', to: 'tw' });
+
+function simplifiedToTraditional<T extends { title: string; content: string; chapters?: { title: string; url: string }[] }>(result: T): T {
+  return {
+    ...result,
+    title: s2t(result.title),
+    content: s2t(result.content),
+    chapters: result.chapters?.map((ch) => ({ ...ch, title: s2t(ch.title) })),
+  };
+}
 
 export interface ChapterItem {
   title: string;
@@ -626,7 +638,7 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
       }
       
       console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字，下一章: ${result.nextChapterUrl || '無'}，上一章: ${result.prevChapterUrl || '無'}`);
-      return result;
+      return simplifiedToTraditional(result);
     }
 
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字，可能是摘要或抓取失敗）`);
@@ -669,7 +681,7 @@ const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
     console.log('提取目錄失敗（不影響主流程）:', error);
   }
   
-  return result;
+  return simplifiedToTraditional(result);
 };
 
 export const fetchNovelFromUrl = async (url: string, currentTitle?: string): Promise<NovelResult> => {
