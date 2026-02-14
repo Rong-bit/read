@@ -774,7 +774,7 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6 space-y-3">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-slate-300 font-bold">可直接貼上文字</div>
                   <button
@@ -791,7 +791,7 @@ const App: React.FC = () => {
                   placeholder="貼上要朗讀的文字"
                   rows={16}
                   style={{ fontSize: `${fontSize}px` }}
-                  className="w-full min-h-[calc(100vh-16rem)] bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 leading-relaxed text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="w-full min-h-[calc(100vh-16rem)] bg-transparent px-0 py-3 leading-relaxed text-slate-100 focus:outline-none focus:ring-0 border-0"
                 />
               </div>
 
