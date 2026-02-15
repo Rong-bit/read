@@ -1,102 +1,138 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Header from './components/header.tsx';
 import Sidebar from './components/sidebar.tsx';
-// ... 其餘 types 與 services 匯入保持不變
+import { NovelContent, ReaderState } from './types.ts';
+import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
+// 請確保你的 utils 與其他匯入路徑正確
+import { decode, decodeAudioData } from './utils/audioUtils.ts';
+
+const STORAGE_KEY_SETTINGS = 'gemini_reader_settings';
+const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
+// ... 其他 STORAGE_KEY 保持不變
+
+/** 小工具函數保持不變 */
+function getNovelText(novel: NovelContent | null): string {
+  if (!novel) return '';
+  if (typeof (novel as any).content === 'string' && (novel as any).content.length > 0) return (novel as any).content;
+  const chapters = (novel as any).chapters;
+  if (Array.isArray(chapters)) return chapters.map((c: any) => c.text ?? c.content ?? '').join('\n');
+  return '';
+}
 
 const App: React.FC = () => {
-  // --- 狀態管理 (保留你原始的狀態) ---
-  const [novel, setNovel] = useState<any | null>(null);
+  // --- 保留你所有的原始 States ---
+  const [novel, setNovel] = useState<NovelContent | null>(null);
+  const [state, setState] = useState<ReaderState>(ReaderState.IDLE);
   const [fontSize, setFontSize] = useState(18);
   const [theme, setTheme] = useState<'dark' | 'sepia' | 'slate'>('dark');
-  const [isMenuOpen, setIsMenuOpen] = useState(true);
-  // ... 其他狀態省略
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // (這裡省略其他 20+ 個 State，請在你的專案中保留它們)
 
-  // --- 佈局樣式變數 ---
+  // --- 保留所有的 Refs ---
+  const audioContextRef = useRef<AudioContext | null>(null);
+  // ... 其他 Refs 保持不變
+
+  // --- 佈局樣式定義 ---
   const themeStyles = {
-    dark: { bg: '#1a1a1a', text: '#e0e0e0' },
-    sepia: { bg: '#f4ecd8', text: '#5b4636' },
-    slate: { bg: '#2d3748', text: '#f7fafc' },
+    dark: { bg: '#1a1a1a', text: '#e0e0e0', border: 'rgba(255,255,255,0.1)' },
+    sepia: { bg: '#f4ecd8', text: '#5b4636', border: 'rgba(0,0,0,0.1)' },
+    slate: { bg: '#2d3748', text: '#f7fafc', border: 'rgba(255,255,255,0.1)' },
   };
 
-  // --- 防止外層捲動 ---
+  // --- 1. 防止二層滾輪的關鍵副作用 ---
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = 'auto'; };
   }, []);
 
+  // --- 2. 保留你所有的原始 useEffect (初始化、存檔等) ---
+  useEffect(() => {
+    /* 你的初始化 LocalStorage 邏輯 */
+    const savedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    if (savedSettings) {
+      const s = JSON.parse(savedSettings);
+      setFontSize(s.fontSize ?? 18);
+      setTheme(s.theme || 'dark');
+    }
+    // ... 其他初始化邏輯
+  }, []);
+
+  // --- 3. 整合後的 UI 結構 ---
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '100vh', // 鎖定視窗高度
+      height: '100vh',           // 固定視窗高度
       width: '100vw',
       backgroundColor: themeStyles[theme].bg,
       color: themeStyles[theme].text,
-      overflow: 'hidden' // 絕對禁止外層出現滾輪
+      overflow: 'hidden'         // 禁止外層滾動
     }}>
       
-      {/* 1. 頂部固定 Header */}
+      {/* 頂部 Header: 傳入控制側邊欄的 function */}
       <Header onMenuToggle={() => setIsMenuOpen(!isMenuOpen)} />
 
       <div style={{
         display: 'flex',
-        flex: 1,           // 自動填滿剩餘高度
-        overflow: 'hidden' // 內部佈局容器也不准捲動
+        flex: 1,                 // 佔滿 Header 以外的剩餘高度
+        overflow: 'hidden'       // 內部容器不滾動
       }}>
         
-        {/* 2. 側邊欄 (根據狀態顯示) */}
+        {/* 側邊欄 */}
         {isMenuOpen && (
           <aside style={{
-            width: '280px',
-            borderRight: '1px solid rgba(128,128,128,0.2)',
-            overflowY: 'auto' // 側邊欄內容過多時可自行捲動
+            width: '300px',
+            borderRight: `1px solid ${themeStyles[theme].border}`,
+            overflowY: 'auto'    // 側邊欄清單長度超過時可自行滾動
           }}>
-            <Sidebar />
+            <Sidebar 
+               // 傳入你的 novel 列表與選擇事件
+            />
           </aside>
         )}
 
-        {/* 3. 核心內容區 (唯一的滾輪來源) */}
+        {/* 主內容區：唯一的垂直滾動層 */}
         <main style={{
           flex: 1,
-          overflowY: 'auto', // 只有這裡會產生捲軸
-          padding: '40px 20px',
-          WebkitOverflowScrolling: 'touch', // 優化行動版捲動
+          overflowY: 'auto',     // 解決二層滾輪的核心：只讓這裡滾動
+          WebkitOverflowScrolling: 'touch',
           display: 'flex',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          padding: '20px'
         }}>
           <article style={{
-            maxWidth: '800px', // 限制閱讀寬度，增加舒適度
+            maxWidth: '800px',
             width: '100%',
             fontSize: `${fontSize}px`,
             lineHeight: '1.8',
-            whiteSpace: 'pre-wrap', // 保持段落換行
+            whiteSpace: 'pre-wrap',
+            paddingBottom: '100px' // 底部留白避免被控制條遮擋
           }}>
-            <h1 style={{ marginBottom: '1.5em' }}>
-              {novel?.title || '未選擇章節'}
+            <h1 style={{ textAlign: 'center', marginBottom: '40px' }}>
+              {novel ? (novel as any).title : '歡迎使用 Gemini Reader'}
             </h1>
             
-            {/* 這裡放入你的主要文本 */}
-            <div>
-              {getNovelText(novel) || (
-                <div style={{ textAlign: 'center', marginTop: '100px', opacity: 0.5 }}>
-                  請從側邊欄選擇或搜尋小說內容
-                </div>
-              )}
+            <div className="novel-body">
+              {getNovelText(novel) || "請載入小說內容開始閱讀..."}
             </div>
           </article>
         </main>
       </div>
 
-      {/* 4. 底部播放控制條 (選配) */}
-      <div style={{
-        height: '60px',
-        borderTop: '1px solid rgba(128,128,128,0.2)',
-        padding: '0 20px',
+      {/* 底部播放控制條 (如果有) */}
+      <footer style={{
+        height: '80px',
+        backgroundColor: 'rgba(0,0,0,0.2)',
+        borderTop: `1px solid ${themeStyles[theme].border}`,
         display: 'flex',
-        alignItems: 'center'
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10
       }}>
-        {/* 播放控制按鈕放置處 */}
-      </div>
+         {/* 這裡放置播放、暫停、語速控制按鈕 */}
+         <span>狀態: {state}</span>
+      </footer>
+
     </div>
   );
 };
