@@ -663,7 +663,7 @@ const App: React.FC = () => {
 
   const getThemeClass = () => {
     switch(theme) {
-      case 'sepia': return 'bg-[#f4ecd8] text-[#5b4636] selection:bg-[#5b4636]/20';
+      case 'sepia': return `bg-[#f2e6cf] text-[#5b4636] selection:bg-[#8b6f47]/30';
       case 'slate': return 'bg-[#1e293b] text-slate-200 selection:bg-indigo-500/30';
       default: return 'bg-[#0b0f1a] text-slate-300 selection:bg-indigo-500/30';
     }
