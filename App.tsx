@@ -855,7 +855,40 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-8">
               <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">小說內容字體大小 ({fontSize}px)</label><input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
-              <div><label className="block text-sm font-bold text-slate-400 mb-4 uppercase tracking-widest">閱讀主題</label><div className="grid grid-cols-3 gap-3">{['dark', 'sepia', 'slate'].map(t => (<button key={t} onClick={() => setTheme(t as any)} className={`py-4 rounded-2xl border transition-all font-bold ${theme === t ? 'border-indigo-500 bg-indigo-500/10 text-white shadow-lg shadow-indigo-500/10' : 'border-white/5 bg-white/5 text-slate-500 hover:bg-white/10'}`}>{t === 'dark' ? '深邃黑' : t === 'sepia' ? '羊皮紙' : '岩板灰'}</button>))}</div></div>
+<div>
+  <label className="block text-sm font-bold text-slate-400 mb-4 uppercase tracking-widest">
+    閱讀主題
+  </label>
+
+  <div className="grid grid-cols-3 gap-3">
+    {['dark', 'sepia', 'slate'].map(t => {
+      const isActive = theme === t;
+
+      const activeStyle =
+        t === 'sepia'
+          ? 'border-[#8b6f47] bg-[#8b6f47]/10 text-[#5b4636] shadow-lg shadow-[#8b6f47]/20'
+          : t === 'slate'
+          ? 'border-slate-400 bg-slate-500/10 text-slate-100 shadow-lg shadow-slate-500/20'
+          : 'border-indigo-500 bg-indigo-500/10 text-white shadow-lg shadow-indigo-500/20';
+
+      return (
+        <button
+          key={t}
+          onClick={() => setTheme(t as any)}
+          className={`
+            py-4 rounded-2xl border transition-all font-bold
+            ${isActive
+              ? activeStyle
+              : 'border-white/5 bg-white/5 text-slate-500 hover:bg-white/10'}
+          `}
+        >
+          {t === 'dark' ? '深邃黑' : t === 'sepia' ? '羊皮紙' : '岩板灰'}
+        </button>
+      );
+    })}
+  </div>
+</div>
+
             </div>
             <button onClick={() => setIsSettingsOpen(false)} className="w-full mt-10 py-5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl transition-all shadow-xl shadow-indigo-600/20">確認儲存</button>
           </div>
