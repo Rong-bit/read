@@ -777,17 +777,22 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              <div className="space-y-3">
-                <textarea
-                  value={webText}
-                  onChange={(e) => setWebText(e.target.value)}
-                  placeholder="貼上要朗讀的文字"
-                  rows={16}
-                  style={{ fontSize: `${fontSize}px` }}
-                  className="w-full bg-transparent px-0 py-3 leading-relaxed text-slate-100 focus:outline-none border-0 resize-none"
-
-                />
-              </div>
+<div
+  contentEditable
+  suppressContentEditableWarning
+  onInput={(e) => setWebText(e.currentTarget.innerText)}
+  style={{ fontSize: `${fontSize}px` }}
+  className="
+    w-full
+    whitespace-pre-wrap
+    break-words
+    leading-relaxed
+    outline-none
+    py-3
+  "
+>
+  {webText}
+</div>
 
             </div>
         </div>
