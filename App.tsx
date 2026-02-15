@@ -729,17 +729,7 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {/* 小說標題（與小說閱讀方式一致） */}
-              {(webTitle || novel?.title) && (
-                <header className="mb-6 text-center">
-                  <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
-                    {webTitle || novel?.title || '小說'}
-                  </h2>
-                  <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full mt-4" />
-                </header>
-              )}
-              
-              {/* 章節目錄（可摺疊） */}
+                            {/* 章節目錄（可摺疊） */}
               {novel?.chapters && novel.chapters.length > 0 && (
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-5 md:p-6">
                   <div className="flex items-center justify-between mb-4">
@@ -776,6 +766,18 @@ const App: React.FC = () => {
                   )}
                 </div>
               )}
+              
+              {/* 小說標題（與小說閱讀方式一致） */}
+              {(webTitle || novel?.title) && (
+                <header className="mb-6 text-center">
+                  <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
+                    {webTitle || novel?.title || '小說'}
+                  </h2>
+                  <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full mt-4" />
+                </header>
+              )}
+              
+
 
 <div
   contentEditable
