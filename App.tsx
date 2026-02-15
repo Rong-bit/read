@@ -670,7 +670,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen pb-40 flex flex-col transition-colors duration-500 ${getThemeClass()}`}>
+    <div className={`h-screen flex flex-col overflow-hidden ${getThemeClass()}`}>
+
       <Header onToggleMenu={() => setIsMenuOpen(true)} />
       
       <Sidebar 
@@ -717,8 +718,10 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <main className="flex-1 container mx-auto px-4 md:px-6">
-        <div className="max-w-4xl mx-auto pt-6 md:pt-10">
+      <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-32">
+
+       <div className="w-full pt-6 md:pt-10">
+
             <div className="space-y-6 pb-28">
               {!isOnline && (
                 <div className="bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs rounded-2xl px-4 py-3">
@@ -781,7 +784,8 @@ const App: React.FC = () => {
                   placeholder="貼上要朗讀的文字"
                   rows={16}
                   style={{ fontSize: `${fontSize}px` }}
-                  className="w-full min-h-[calc(100vh-16rem)] bg-transparent px-0 py-3 leading-relaxed text-slate-100 focus:outline-none focus:ring-0 border-0"
+                  className="w-full bg-transparent px-0 py-3 leading-relaxed text-slate-100 focus:outline-none border-0 resize-none"
+
                 />
               </div>
 
