@@ -29,7 +29,7 @@ app.post('/api/fetch-novel', async (req, res) => {
 
     console.log(`[${new Date().toISOString()}] 正在抓取小說: ${url}`);
     const result = await fetchNovelFromUrl(url, currentTitle);
-    console.log(`[${new Date().toISOString()}] 抓取成功: 標題="${result.title}", 內容長度=${result.content.length}, 下一章=${result.nextChapterUrl || '無'}`);
+    console.log(`[${new Date().toISOString()}] 抓取成功: 標題="${result.title}", 內容長度=${result.content.length}, 上一章=${result.prevChapterUrl || '無'}, 下一章=${result.nextChapterUrl || '無'}, 目錄章數=${result.chapters?.length || 0}`);
     
     res.json(result);
   } catch (error: any) {
