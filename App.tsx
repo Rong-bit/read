@@ -15,6 +15,7 @@ const STORAGE_KEY_WEB_LIST = 'web_reader_list';
 const STORAGE_KEY_GEMINI_API_KEY = 'gemini_reader_api_key';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 const STORAGE_KEY_BOOKMARKS = 'gemini_reader_bookmarks_v1';
+const STORAGE_KEY_COPYRIGHT_NOTICE = 'gemini_reader_notice_copyright_v1';
 
 type BookmarkItem = {
   id: string;
@@ -97,6 +98,26 @@ const App: React.FC = () => {
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
   const [bookmarkToast, setBookmarkToast] = useState<string | null>(null);
+
+  // 開啟應用時的「支持正版」提示
+  const [hideCopyrightNoticeNextTime, setHideCopyrightNoticeNextTime] = useState(false);
+  const [isCopyrightNoticeOpen, setIsCopyrightNoticeOpen] = useState(() => {
+    try {
+      // 預設會顯示；若使用者勾選「下次不再顯示」才會隱藏
+      return localStorage.getItem(STORAGE_KEY_COPYRIGHT_NOTICE) !== 'hidden';
+    } catch {
+      return true;
+    }
+  });
+
+  const closeCopyrightNotice = () => {
+    if (hideCopyrightNoticeNextTime) {
+      try {
+        localStorage.setItem(STORAGE_KEY_COPYRIGHT_NOTICE, 'hidden');
+      } catch {}
+    }
+    setIsCopyrightNoticeOpen(false);
+  };
 
   // --- Refs ---
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -1199,6 +1220,75 @@ const App: React.FC = () => {
       {bookmarkToast && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[120] bg-slate-900/95 border border-white/10 text-slate-100 px-4 py-2 rounded-full text-sm font-bold shadow-2xl backdrop-blur-md">
           {bookmarkToast}
+        </div>
+      )}
+
+      {/* 支持正版提示 Modal（開啟即顯示） */}
+      {isCopyrightNoticeOpen && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div
+            className="bg-slate-900 border border-white/10 w-full max-w-lg rounded-[2rem] p-6 md:p-8 shadow-2xl text-slate-100 animate-fade-in-up"
+            role="dialog"
+            aria-modal="true"
+            aria-label="支持正版提示"
+          >
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-2xl font-extrabold text-white">支持正版</h2>
+                <p className="text-slate-400 text-sm mt-1">閱讀請以原作者與正版平台為主。</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCopyrightNotice}
+                className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/5"
+                aria-label="關閉"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm text-slate-200 leading-relaxed">
+              <div className="p-4 rounded-2xl bg-amber-900/20 border border-amber-500/20">
+                <p className="text-amber-200/90">
+                  本工具僅提供排版與朗讀等閱讀輔助功能，內容版權歸原作者及發佈平台所有。
+                  請<strong className="text-amber-200">支持正版</strong>，前往官方/正版平台閱讀完整內容。
+                </p>
+              </div>
+              <ul className="list-disc pl-5 text-slate-300 space-y-2">
+                <li>請勿將受版權保護內容用於下載、轉載、散佈或商業用途。</li>
+                <li>若來源網站有付費/會員機制，請依其規範使用。</li>
+              </ul>
+              <label className="flex items-center gap-3 mt-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={hideCopyrightNoticeNextTime}
+                  onChange={(e) => setHideCopyrightNoticeNextTime(e.target.checked)}
+                  className="w-4 h-4 rounded border-white/20 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
+                />
+                <span className="text-xs text-slate-400">下次不再顯示</span>
+              </label>
+            </div>
+
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBrowseOpen(true);
+                  closeCopyrightNotice();
+                }}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-100 font-bold text-sm"
+              >
+                前往書源/正版平台
+              </button>
+              <button
+                type="button"
+                onClick={closeCopyrightNotice}
+                className="w-full sm:flex-1 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-xl shadow-indigo-600/20"
+              >
+                我已了解
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
