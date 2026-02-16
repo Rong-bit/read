@@ -385,9 +385,7 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
       const bookId = match?.[1];
       if (!bookId) return undefined;
 
-      // 縱橫 PC 站目錄常以 JS 延遲載入，直接抓 HTML 可能拿不到章節列表。
-      // 改抓 m 站書頁：會輸出一批「最新章節 + 當前附近章節」，至少可用。
-      const tocUrl = `https://m.zongheng.com/book/${bookId}`;
+      const tocUrl = `https://www.zongheng.com/detail/${bookId}?tabsName=catalogue`;
       const response = await fetch(tocUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -400,36 +398,44 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
       const $toc = cheerio.load(html);
 
       const chapters: ChapterItem[] = [];
-      const linkEls = $toc(`a[href*="/chapter/${bookId}/"]`).toArray();
+      const linkEls = $toc(`a[href*="/chapter/${bookId}/"], a[href*="read.zongheng.com/chapter/${bookId}/"]`).toArray();
       for (const el of linkEls) {
         const $a = $toc(el);
         const rawHref = ($a.attr('href') || '').trim();
         if (!rawHref) continue;
-        const m = rawHref.match(new RegExp(`/chapter/${bookId}/(\\d+)`));
-        const chapterId = m?.[1];
-        if (!chapterId) continue;
+
+        let fullUrl: string | null = null;
+        if (rawHref.startsWith('//')) fullUrl = `https:${rawHref}`;
+        else if (rawHref.startsWith('http')) fullUrl = rawHref;
+        else if (rawHref.startsWith('/chapter/')) fullUrl = `https://read.zongheng.com${rawHref}`;
+        else {
+          try {
+            fullUrl = new URL(rawHref, tocUrl).href;
+          } catch {
+            fullUrl = null;
+          }
+        }
+
+        if (!fullUrl) continue;
+        if (!fullUrl.includes(`/chapter/${bookId}/`)) continue;
+
+        // 只收章節頁
+        const m = fullUrl.match(/\/chapter\/\d+\/(\d+)\.html/);
+        if (!m) continue;
 
         const title = (($a.text() || $a.attr('title') || '').trim());
         if (!title) continue;
-        if (title === '开始阅读' || title === '立即阅读') continue;
 
-        const chapterUrl = `https://read.zongheng.com/chapter/${bookId}/${chapterId}.html?`;
-        if (!chapters.find(ch => ch.url === chapterUrl)) {
-          chapters.push({ title, url: chapterUrl });
+        if (!chapters.find(ch => ch.url === fullUrl)) {
+          chapters.push({ title, url: fullUrl.endsWith('?') ? fullUrl : fullUrl + (fullUrl.includes('?') ? '' : '?') });
         }
       }
 
       if (chapters.length > 0) {
-        const parseNo = (t: string): number | null => {
-          const mm = t.match(/第\s*(\d+)\s*章/);
-          return mm ? parseInt(mm[1], 10) : null;
-        };
         chapters.sort((a, b) => {
-          const na = parseNo(a.title);
-          const nb = parseNo(b.title);
-          if (na != null && nb != null) return na - nb;
-          if (na != null) return -1;
-          if (nb != null) return 1;
+          const ma = a.url.match(/\/chapter\/\d+\/(\d+)\.html/);
+          const mb = b.url.match(/\/chapter\/\d+\/(\d+)\.html/);
+          if (ma && mb) return parseInt(ma[1], 10) - parseInt(mb[1], 10);
           return 0;
         });
         console.log(`✓ 成功提取縱橫目錄，共 ${chapters.length} 章`);
