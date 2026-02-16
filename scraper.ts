@@ -96,11 +96,39 @@ export interface NovelResult {
   nextChapterUrl?: string;
 }
 
+const isQidianUrl = (input: string): boolean => {
+  try {
+    const u = new URL(input);
+    return u.hostname === 'qidian.com' || u.hostname.endsWith('.qidian.com');
+  } catch {
+    return false;
+  }
+};
+
+const toQidianMobileChapterUrl = (input: string): string => {
+  const u = new URL(input);
+  if (u.hostname === 'm.qidian.com') return u.toString();
+  if (u.hostname.endsWith('qidian.com') && u.pathname.startsWith('/chapter/')) {
+    const mobile = new URL(`https://m.qidian.com${u.pathname}`);
+    mobile.search = u.search;
+    mobile.hash = u.hash;
+    return mobile.toString();
+  }
+  if (u.hostname.endsWith('qidian.com')) {
+    const mobile = new URL(`https://m.qidian.com${u.pathname}`);
+    mobile.search = u.search;
+    mobile.hash = u.hash;
+    return mobile.toString();
+  }
+  return input;
+};
+
 // 判斷是否需要使用 Puppeteer（JavaScript 渲染）
 const needsPuppeteer = (url: string): boolean => {
   const urlLower = url.toLowerCase();
   // 大部分小說網站都是靜態 HTML，但有些可能需要 JS
-  return urlLower.includes('qidian.com') || urlLower.includes('webnovel.com');
+  // 起點桌面版常回 202 探針頁（反爬），改抓 m.qidian.com 不需要 Puppeteer
+  return urlLower.includes('webnovel.com');
 };
 
 // 提取下一章链接
@@ -616,6 +644,50 @@ export const fetchNovelFromUrl = async (
   currentTitle?: string
 ): Promise<NovelResult> => {
   try {
+    // 起點：直接抓手機版（避免桌面版 202 探針頁）
+    if (isQidianUrl(url)) {
+      const mobileUrl = toQidianMobileChapterUrl(url);
+      const response = await fetch(mobileUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+          'Referer': 'https://m.qidian.com/',
+        },
+      });
+      if (!response.ok) throw new Error(`HTTP 錯誤: ${response.status}`);
+
+      const html = await response.text();
+      const $ = cheerio.load(html);
+      const title = $('h1').first().text().trim() || $('title').text().trim();
+      const paragraphs = $('main p')
+        .map((_, el) => $(el).text().trim())
+        .get()
+        .filter(t => t.length > 0);
+      const content = paragraphs.join('\n\n');
+      if (content.length < 200) {
+        throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${content.length} 字，可能是摘要或抓取失敗）`);
+      }
+
+      const nextHref =
+        $('a')
+          .toArray()
+          .map(a => ({ t: $(a).text().trim(), h: $(a).attr('href') }))
+          .find(x => x.h && x.t.includes('下一章'))?.h || undefined;
+
+      const nextChapterUrl = nextHref
+        ? (nextHref.startsWith('//')
+            ? `https:${nextHref}`
+            : new URL(nextHref, mobileUrl).href)
+        : undefined;
+
+      // 先清理垃圾行，再做簡轉繁（避免把垃圾行也「轉換」成正文的一部分）
+      return applySimplifiedToTraditional(
+        postProcessResult({ title, content, sourceUrl: url, nextChapterUrl }, mobileUrl)
+      );
+    }
+
     let result: NovelResult;
     if (!needsPuppeteer(url)) {
       try {
