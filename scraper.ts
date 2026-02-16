@@ -1,5 +1,4 @@
 import * as cheerio from 'cheerio';
-import puppeteer from 'puppeteer';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error opencc-js 無型別宣告
 import * as OpenCC from 'opencc-js';
@@ -94,6 +93,7 @@ export interface NovelResult {
   content: string;
   sourceUrl?: string;
   nextChapterUrl?: string;
+  prevChapterUrl?: string;
 }
 
 const isQidianUrl = (input: string): boolean => {
@@ -528,9 +528,15 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
 
 // 使用 Puppeteer 抓取（處理 JavaScript 渲染）
 const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
+  const chromium = (await import('@sparticuz/chromium')).default as any;
+  const puppeteer = (await import('puppeteer-core')).default as any;
+
+  const executablePath = await chromium.executablePath();
   const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: executablePath || undefined,
+    headless: chromium.headless,
   });
   
   try {
@@ -670,21 +676,41 @@ export const fetchNovelFromUrl = async (
         throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${content.length} 字，可能是摘要或抓取失敗）`);
       }
 
+      const pathMatch = mobileUrl.match(/\/chapter\/(\d+)\/(\d+)\//);
+      const bookId = pathMatch?.[1];
+      const scriptsText = $('script')
+        .toArray()
+        .map(s => ($(s).html() || $(s).text() || '').toString())
+        .join('\n');
+      const nextIdMatch =
+        scriptsText.match(/"next"\s*:\s*(\d{6,})/) ||
+        scriptsText.match(/\bnext\s*[:=]\s*(\d{6,})/);
+      const prevIdMatch =
+        scriptsText.match(/"prev"\s*:\s*(\d{6,})/) ||
+        scriptsText.match(/\bprev\s*[:=]\s*(\d{6,})/);
+
       const nextHref =
         $('a')
           .toArray()
           .map(a => ({ t: $(a).text().trim(), h: $(a).attr('href') }))
           .find(x => x.h && x.t.includes('下一章'))?.h || undefined;
 
-      const nextChapterUrl = nextHref
+      let nextChapterUrl = nextHref
         ? (nextHref.startsWith('//')
             ? `https:${nextHref}`
             : new URL(nextHref, mobileUrl).href)
         : undefined;
 
+      if (!nextChapterUrl && bookId && nextIdMatch?.[1]) {
+        nextChapterUrl = `https://m.qidian.com/chapter/${bookId}/${nextIdMatch[1]}/`;
+      }
+
+      const prevChapterUrl =
+        bookId && prevIdMatch?.[1] ? `https://m.qidian.com/chapter/${bookId}/${prevIdMatch[1]}/` : undefined;
+
       // 先清理垃圾行，再做簡轉繁（避免把垃圾行也「轉換」成正文的一部分）
       return applySimplifiedToTraditional(
-        postProcessResult({ title, content, sourceUrl: url, nextChapterUrl }, mobileUrl)
+        postProcessResult({ title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl }, mobileUrl)
       );
     }
 
