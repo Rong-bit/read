@@ -1,18 +1,11 @@
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
 
-export interface ChapterItem {
-  title: string;
-  url: string;
-}
-
 export interface NovelResult {
   title: string;
   content: string;
   sourceUrl?: string;
   nextChapterUrl?: string;
-  prevChapterUrl?: string;
-  chapters?: ChapterItem[];
 }
 
 // 判斷是否需要使用 Puppeteer（JavaScript 渲染）
@@ -159,296 +152,6 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
   return undefined;
 };
 
-// 提取上一章链接
-const extractPrevChapterUrl = ($: cheerio.CheerioAPI, url: string): string | undefined => {
-  const urlLower = url.toLowerCase();
-  let baseUrl: string;
-  try {
-    baseUrl = new URL(url).origin;
-  } catch {
-    return undefined;
-  }
-  
-  // 稷下書院 / twword.com - 从脚本变量中提取
-  if (urlLower.includes('twword.com')) {
-    const scripts = $('script').toArray();
-    for (const script of scripts) {
-      const scriptText = $(script).html() || $(script).text() || '';
-      let prevUrlMatch = scriptText.match(/var\s+prevUrl\s*=\s*['"]([^'"]+)['"]/);
-      if (!prevUrlMatch) {
-        prevUrlMatch = scriptText.match(/prevUrl\s*=\s*['"]([^'"]+)['"]/);
-      }
-      if (!prevUrlMatch) {
-        prevUrlMatch = scriptText.match(/["']prevUrl["']\s*:\s*["']([^"']+)["']/);
-      }
-      if (prevUrlMatch && prevUrlMatch[1]) {
-        const prevUrl = prevUrlMatch[1];
-        console.log('從腳本變量提取到上一章:', prevUrl);
-        if (prevUrl.startsWith('http')) return prevUrl;
-        if (prevUrl.startsWith('/')) return baseUrl + prevUrl;
-        try {
-          return new URL(prevUrl, url).href;
-        } catch {
-          return baseUrl + prevUrl;
-        }
-      }
-    }
-    
-    // 从底部导航中提取
-    const footNavLinks = $('.foot-nav a').toArray();
-    for (const link of footNavLinks) {
-      const $link = $(link);
-      const text = $link.text().trim();
-      const href = $link.attr('href');
-      if (text && (text.includes('上一章') || text.includes('上一頁'))) {
-        if (href) {
-          console.log('從底部導航提取到上一章:', href);
-          if (href.startsWith('http')) return href;
-          if (href.startsWith('/')) return baseUrl + href;
-          try {
-            return new URL(href, url).href;
-          } catch {
-            return baseUrl + href;
-          }
-        }
-      }
-    }
-    
-    // 从 prevBtn 类中提取
-    const prevBtnLink = $('.prevBtn').parent('a').attr('href') ||
-      $('a.prevBtn').attr('href') ||
-      $('[class*="prev"]').filter((_, el) => {
-        const text = $(el).text().toLowerCase();
-        return text.includes('上一章') || text.includes('上一頁');
-      }).attr('href');
-    if (prevBtnLink) {
-      if (prevBtnLink.startsWith('http')) return prevBtnLink;
-      if (prevBtnLink.startsWith('/')) return baseUrl + prevBtnLink;
-      return new URL(prevBtnLink, url).href;
-    }
-    
-    // URL 模式推断上一章（最後手段）
-    console.log('嘗試從 URL 模式推斷上一章...');
-    const urlMatch = url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
-    if (urlMatch) {
-      const [, bookId, chapterPrefix, chapterNum] = urlMatch;
-      const prevChapterNum = parseInt(chapterNum, 10) - 1;
-      if (prevChapterNum > 0) {
-        const inferredUrl = `${baseUrl}/${bookId}/${chapterPrefix}_${prevChapterNum}.html`;
-        console.log(`從 URL 模式推斷上一章: ${inferredUrl} (當前: ${chapterNum}, 上一章: ${prevChapterNum})`);
-        return inferredUrl;
-      }
-    }
-  }
-  
-  // 通用提取：查找包含"上一章"、"上一頁"等文字的链接
-  const allLinks = $('a').toArray();
-  for (const link of allLinks) {
-    const $link = $(link);
-    const text = $link.text().trim().toLowerCase();
-    const href = $link.attr('href');
-    if (href && (text.includes('上一章') || text.includes('上一頁') || text.includes('上一页'))) {
-      console.log('從通用鏈接提取到上一章:', href);
-      if (href.startsWith('http')) return href;
-      if (href.startsWith('/')) return baseUrl + href;
-      try {
-        return new URL(href, url).href;
-      } catch {
-        return baseUrl + href;
-      }
-    }
-  }
-  
-  console.log('未找到上一章鏈接');
-  return undefined;
-};
-
-// 提取章節目錄（目前支援 twword.com / zongheng.com）
-const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<ChapterItem[] | undefined> => {
-  const urlLower = url.toLowerCase();
-  let baseUrl: string;
-  try {
-    baseUrl = new URL(url).origin;
-  } catch {
-    return undefined;
-  }
-
-  // 稷下書院 / twword.com
-  if (urlLower.includes('twword.com')) {
-    try {
-      let tocUrl: string | undefined;
-
-      // 查找目錄鏈接
-      const tocLinks = $('a').toArray();
-      for (const link of tocLinks) {
-        const $link = $(link);
-        const text = $link.text().trim().toLowerCase();
-        const href = $link.attr('href');
-        if (href && (text.includes('目錄') || text.includes('章節目錄') || text.includes('章節列表'))) {
-          if (href.startsWith('http')) tocUrl = href;
-          else if (href.startsWith('/')) tocUrl = baseUrl + href;
-          else {
-            try {
-              tocUrl = new URL(href, url).href;
-            } catch {
-              tocUrl = baseUrl + href;
-            }
-          }
-          console.log('找到目錄鏈接:', tocUrl);
-          break;
-        }
-      }
-
-      // 如果沒找到目錄鏈接，嘗試從 URL 推斷目錄頁
-      if (!tocUrl) {
-        const urlMatch = url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
-        if (urlMatch) {
-          const [, bookId] = urlMatch;
-          tocUrl = `${baseUrl}/${bookId}/`;
-          console.log('從 URL 推斷目錄頁:', tocUrl);
-        }
-      }
-
-      if (!tocUrl) return undefined;
-
-      const response = await fetch(tocUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8'
-        }
-      });
-
-      if (!response.ok) return undefined;
-      const html = await response.text();
-      const $toc = cheerio.load(html);
-
-      const chapters: ChapterItem[] = [];
-      const selectors = [
-        'a[href*=".html"]',
-        '.chapter-list a',
-        '.chapter-item a',
-        'ul.chapter-list a',
-        'div.chapter-list a'
-      ];
-
-      for (const selector of selectors) {
-        const links = $toc(selector).toArray();
-        if (links.length === 0) continue;
-        for (const link of links) {
-          const $link = $toc(link);
-          const href = $link.attr('href');
-          const title = ($link.text() || '').trim();
-          if (!href || !href.includes('.html') || !title) continue;
-
-          let fullUrl: string;
-          if (href.startsWith('http')) fullUrl = href;
-          else if (href.startsWith('/')) fullUrl = baseUrl + href;
-          else {
-            try {
-              fullUrl = new URL(href, tocUrl).href;
-            } catch {
-              fullUrl = baseUrl + href;
-            }
-          }
-
-          // 過濾只保留符合章節URL模式的鏈接（例如：/0315678038/8096_XXX.html）
-          if (!fullUrl.match(/\/(\d+)\/(\d+)_(\d+)\.html/)) continue;
-
-          // 避免重複
-          if (!chapters.find(ch => ch.url === fullUrl)) {
-            chapters.push({ title, url: fullUrl });
-          }
-        }
-
-        if (chapters.length > 0) {
-          // 按章節號排序
-          chapters.sort((a, b) => {
-            const matchA = a.url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
-            const matchB = b.url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
-            if (matchA && matchB) return parseInt(matchA[3], 10) - parseInt(matchB[3], 10);
-            return 0;
-          });
-          console.log(`從目錄頁提取到 ${chapters.length} 個章節`);
-          return chapters;
-        }
-      }
-    } catch (error) {
-      console.error('提取目錄失敗:', error);
-    }
-  }
-
-  // 縱橫中文網 zongheng.com / read.zongheng.com
-  if (urlLower.includes('zongheng.com')) {
-    try {
-      const match = url.match(/\/chapter\/(\d+)\//);
-      const bookId = match?.[1];
-      if (!bookId) return undefined;
-
-      const tocUrl = `https://www.zongheng.com/detail/${bookId}?tabsName=catalogue`;
-      const response = await fetch(tocUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8'
-        }
-      });
-      if (!response.ok) return undefined;
-      const html = await response.text();
-      const $toc = cheerio.load(html);
-
-      const chapters: ChapterItem[] = [];
-      const linkEls = $toc(`a[href*="/chapter/${bookId}/"], a[href*="read.zongheng.com/chapter/${bookId}/"]`).toArray();
-      for (const el of linkEls) {
-        const $a = $toc(el);
-        const rawHref = ($a.attr('href') || '').trim();
-        if (!rawHref) continue;
-
-        let fullUrl: string | null = null;
-        if (rawHref.startsWith('//')) fullUrl = `https:${rawHref}`;
-        else if (rawHref.startsWith('http')) fullUrl = rawHref;
-        else if (rawHref.startsWith('/chapter/')) fullUrl = `https://read.zongheng.com${rawHref}`;
-        else {
-          try {
-            fullUrl = new URL(rawHref, tocUrl).href;
-          } catch {
-            fullUrl = null;
-          }
-        }
-
-        if (!fullUrl) continue;
-        if (!fullUrl.includes(`/chapter/${bookId}/`)) continue;
-
-        // 只收章節頁
-        const m = fullUrl.match(/\/chapter\/\d+\/(\d+)\.html/);
-        if (!m) continue;
-
-        const title = (($a.text() || $a.attr('title') || '').trim());
-        if (!title) continue;
-
-        if (!chapters.find(ch => ch.url === fullUrl)) {
-          chapters.push({ title, url: fullUrl.endsWith('?') ? fullUrl : fullUrl + (fullUrl.includes('?') ? '' : '?') });
-        }
-      }
-
-      if (chapters.length > 0) {
-        chapters.sort((a, b) => {
-          const ma = a.url.match(/\/chapter\/\d+\/(\d+)\.html/);
-          const mb = b.url.match(/\/chapter\/\d+\/(\d+)\.html/);
-          if (ma && mb) return parseInt(ma[1], 10) - parseInt(mb[1], 10);
-          return 0;
-        });
-        console.log(`✓ 成功提取縱橫目錄，共 ${chapters.length} 章`);
-        return chapters;
-      }
-    } catch (error) {
-      console.log('提取縱橫目錄失敗（不影響主流程）:', error);
-    }
-  }
-
-  return undefined;
-};
-
 // 通用內容提取函數
 const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null => {
   const urlLower = url.toLowerCase();
@@ -521,8 +224,7 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
     
     if (content.length > 100) {
       const nextChapterUrl = extractNextChapterUrl($, url);
-      const prevChapterUrl = extractPrevChapterUrl($, url);
-      return { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl };
+      return { title, content, sourceUrl: url, nextChapterUrl };
     }
   }
   
@@ -550,11 +252,9 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
                   $('title').text().trim();
     const $content = $('.chapter-content .content').first();
     
-    // 先提取下一章 / 上一章链接（无论内容是否足够）
+    // 先提取下一章链接（无论内容是否足够）
     const nextChapterUrl = extractNextChapterUrl($, url);
-    const prevChapterUrl = extractPrevChapterUrl($, url);
     console.log('twword.com 提取到的下一章链接:', nextChapterUrl);
-    console.log('twword.com 提取到的上一章链接:', prevChapterUrl);
     
     if ($content.length > 0) {
       $content.find('.gadBlock, .adBlock, ins, script, iframe, ad').remove();
@@ -565,18 +265,17 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
         .filter(text => text.length > 0 && !text.includes('溫馨提示'))
         .join('\n\n');
       if (content.length > 100) {
-        return { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl };
+        return { title, content, sourceUrl: url, nextChapterUrl };
       }
     }
     
-    // 即使内容不够，也返回结果（包含上下章链接）
-    if (nextChapterUrl || prevChapterUrl) {
+    // 即使内容不够，也返回结果（包含下一章链接）
+    if (nextChapterUrl) {
       return { 
         title, 
         content: '', 
         sourceUrl: url, 
-        nextChapterUrl,
-        prevChapterUrl
+        nextChapterUrl 
       };
     }
   }
@@ -655,9 +354,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
       
       if (content.length > 200) {
         const nextChapterUrl = extractNextChapterUrl($, url);
-        const prevChapterUrl = extractPrevChapterUrl($, url);
         console.log(`✓ 通用提取成功：標題「${title}」，內容長度 ${content.length}`);
-        return { title: title || '小說章節', content, sourceUrl: url, nextChapterUrl, prevChapterUrl };
+        return { title: title || '小說章節', content, sourceUrl: url, nextChapterUrl };
       }
     }
   }
@@ -691,23 +389,20 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
     const content = paragraphs.join('\n\n');
     if (content.length > 200) {
       const nextChapterUrl = extractNextChapterUrl($, url);
-      const prevChapterUrl = extractPrevChapterUrl($, url);
       console.log(`✓ 從段落提取成功：標題「${title}」，內容長度 ${content.length}`);
-      return { title: title || '小說章節', content, sourceUrl: url, nextChapterUrl, prevChapterUrl };
+      return { title: title || '小說章節', content, sourceUrl: url, nextChapterUrl };
     }
   }
   
-  // 如果還是沒有內容，至少返回標題和上下章鏈接（如果有）
+  // 如果還是沒有內容，至少返回標題和下一章鏈接（如果有）
   const nextChapterUrl = extractNextChapterUrl($, url);
-  const prevChapterUrl = extractPrevChapterUrl($, url);
-  if (title || nextChapterUrl || prevChapterUrl) {
+  if (title || nextChapterUrl) {
     console.log('⚠️ 無法提取足夠內容，但返回標題和/或下一章鏈接');
     return {
       title: title || '小說章節',
       content: '',
       sourceUrl: url,
-      nextChapterUrl,
-      prevChapterUrl
+      nextChapterUrl
     };
   }
   
@@ -748,26 +443,8 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
           result.nextChapterUrl = nextChapterUrl;
         }
       }
-      // 確保返回結果包含上一章鏈接
-      if (!result.prevChapterUrl) {
-        const prevChapterUrl = extractPrevChapterUrl($, url);
-        if (prevChapterUrl) {
-          console.log(`✓ 從 Puppeteer HTML 中提取到上一章鏈接: ${prevChapterUrl}`);
-          result.prevChapterUrl = prevChapterUrl;
-        }
-      }
-
-      // 提取目錄（不影響主流程）
-      try {
-        const chapters = await extractChapters($, url);
-        if (chapters && chapters.length > 0) {
-          result.chapters = chapters;
-        }
-      } catch (error) {
-        console.log('提取目錄失敗（不影響主流程）:', error);
-      }
       // 記錄抓取的內容長度（用於調試）
-      console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字，下一章: ${result.nextChapterUrl || '無'}，上一章: ${result.prevChapterUrl || '無'}`);
+      console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字，下一章: ${result.nextChapterUrl || '無'}`);
       return result;
     }
     
@@ -788,21 +465,18 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
         const html = await response.text();
         const $ = cheerio.load(html);
         const nextChapterUrl = extractNextChapterUrl($, url);
-        const prevChapterUrl = extractPrevChapterUrl($, url);
         
-        if (nextChapterUrl || prevChapterUrl) {
+        if (nextChapterUrl) {
           // 嘗試從 URL 中提取章節號作為標題
           const urlMatch = url.match(/\/(\d+)\/(\d+)_(\d+)\.html/);
           const title = urlMatch ? `第${urlMatch[3]}章` : $('title').text().trim() || '小說章節';
           
-          if (nextChapterUrl) console.log(`✓ 從 Cheerio HTML 中提取到下一章鏈接: ${nextChapterUrl}`);
-          if (prevChapterUrl) console.log(`✓ 從 Cheerio HTML 中提取到上一章鏈接: ${prevChapterUrl}`);
+          console.log(`✓ 從 Cheerio HTML 中提取到下一章鏈接: ${nextChapterUrl}`);
           return {
             title,
             content: '',
             sourceUrl: url,
-            nextChapterUrl,
-            prevChapterUrl
+            nextChapterUrl
           };
         }
       }
@@ -842,16 +516,6 @@ const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字，可能是摘要或抓取失敗）`);
   }
   
-  // 提取目錄（不影響主流程）
-  try {
-    const chapters = await extractChapters($, url);
-    if (chapters && chapters.length > 0) {
-      result.chapters = chapters;
-    }
-  } catch (error) {
-    console.log('提取目錄失敗（不影響主流程）:', error);
-  }
-
   // 記錄抓取的內容長度（用於調試）
   console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字`);
   
