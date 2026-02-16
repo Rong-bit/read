@@ -121,6 +121,7 @@ const App: React.FC = () => {
   const paragraphElsRef = useRef(new Map<number, HTMLElement>());
   const pendingScrollToParagraphRef = useRef<number | null>(null);
   const lastFetchedUrlRef = useRef<string>('');
+  const pendingAutoPlayAfterFetchRef = useRef(false);
 
   // --- Initialization ---
   useEffect(() => {
@@ -722,6 +723,17 @@ const App: React.FC = () => {
     setWebSpeechElapsed(0);
   };
 
+  // 若使用者在「正在播放」時翻頁，抓取完成後自動播放新章節
+  useEffect(() => {
+    if (!pendingAutoPlayAfterFetchRef.current) return;
+    if (isEditingText) return;
+    if (webLoading) return;
+    if (webIsSpeaking || webIsPaused) return;
+    if (!webText.trim()) return;
+    pendingAutoPlayAfterFetchRef.current = false;
+    void handleWebPlayPause();
+  }, [webText, webLoading, webIsSpeaking, webIsPaused, isEditingText]);
+
   // Web 朗讀進度：用於跟讀時當前行高亮
   useEffect(() => {
     if (!webIsSpeaking || webIsPaused) return;
@@ -1117,7 +1129,16 @@ const App: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => novel?.nextChapterUrl && handleWebFetch(novel.nextChapterUrl)}
+          onClick={() => {
+            const nextUrl = novel?.nextChapterUrl;
+            if (!nextUrl) return;
+            const wasPlaying = webIsSpeaking && !webIsPaused;
+            handleWebStop();
+            pendingAutoPlayAfterFetchRef.current = wasPlaying;
+            void handleWebFetch(nextUrl).then((ok) => {
+              if (!ok) pendingAutoPlayAfterFetchRef.current = false;
+            });
+          }}
           disabled={!novel?.nextChapterUrl}
           className="flex-shrink-0 w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-slate-300 transition-colors"
           title="下一頁"
