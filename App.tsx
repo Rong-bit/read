@@ -113,6 +113,8 @@ const App: React.FC = () => {
   const webAiPlayingRef = useRef(false);
   const [webSpeechElapsed, setWebSpeechElapsed] = useState(0);
   const [webSpeechTotalSec, setWebSpeechTotalSec] = useState(0);
+  const webSpeechCharIndexRef = useRef<number>(0);
+  const [webSpeechCharIndex, setWebSpeechCharIndex] = useState(0);
   const mainRef = useRef<HTMLElement | null>(null);
   const scrollCheckRafRef = useRef<number | null>(null);
   const autoNextInFlightRef = useRef(false);
@@ -307,7 +309,9 @@ const App: React.FC = () => {
       saveReadingProgress(0);
       setShowSearch(false); // 成功載入後隱藏搜尋區域
       setState(ReaderState.IDLE);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      const el = mainRef.current;
+      if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
+      else window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error('handleSearch 錯誤:', err);
       setError(err.message || "無法處理網址。請檢查網址是否正確。");
@@ -504,14 +508,22 @@ const App: React.FC = () => {
     if (autoNextInFlightRef.current) return;
     if (fromKey && lastAutoNextFromRef.current === fromKey && now - lastAutoNextAtRef.current < 4000) return;
 
+    // 朗讀結束觸發翻章：下一章載入後要自動續播
+    if (reason === 'tts') {
+      pendingAutoPlayAfterFetchRef.current = true;
+    }
+
     autoNextInFlightRef.current = true;
     lastAutoNextFromRef.current = fromKey;
     lastAutoNextAtRef.current = now;
     try {
       const ok = await handleWebFetch(nextUrl);
       if (ok) {
-        window.scrollTo({ top: 0, behavior: reason === 'scroll' ? 'auto' : 'smooth' });
+        const el = mainRef.current;
+        if (el) el.scrollTo({ top: 0, behavior: reason === 'scroll' ? 'auto' : 'smooth' });
+        else window.scrollTo({ top: 0, behavior: reason === 'scroll' ? 'auto' : 'smooth' });
       }
+      if (!ok && reason === 'tts') pendingAutoPlayAfterFetchRef.current = false;
     } finally {
       autoNextInFlightRef.current = false;
     }
@@ -591,8 +603,8 @@ const App: React.FC = () => {
       setWebIsPaused(false);
       return;
     }
-    const text = webText.trim();
-    if (!text) {
+    const trimmedText = webText.trim();
+    if (!trimmedText) {
       setWebError('請先貼上文字或抓取內容');
       return;
     }
@@ -601,7 +613,7 @@ const App: React.FC = () => {
     // 使用 AI（Gemini）朗讀：分段合成、依序播放
     if (useAiReading) {
       handleWebStop();
-      const segments = splitTextForTTS(text, 1200);
+      const segments = splitTextForTTS(trimmedText, 1200);
       if (segments.length === 0) {
         setWebError('沒有可朗讀的內容');
         return;
@@ -676,14 +688,18 @@ const App: React.FC = () => {
     }
 
     // 瀏覽器語音朗讀
-    const charsPerSecond = 5.2;
-    const estimatedSec = Math.max((text.length / charsPerSecond) / webRate, 1);
+    const speakText = (webText || '').replace(/\r\n/g, '\n');
+    // 回退用估算：字速保守一些，避免高亮一路跑在前面
+    const charsPerSecond = 4.4;
+    const estimatedSec = Math.max((speakText.length / charsPerSecond) / webRate, 1);
     webEstimatedDurationRef.current = estimatedSec;
     setWebSpeechTotalSec(estimatedSec);
     webSpeechStartTimeRef.current = Date.now();
     webSpeechPausedElapsedRef.current = 0;
     setWebSpeechElapsed(0);
-    const utterance = new SpeechSynthesisUtterance(text);
+    webSpeechCharIndexRef.current = 0;
+    setWebSpeechCharIndex(0);
+    const utterance = new SpeechSynthesisUtterance(speakText);
     utterance.rate = webRate;
     if (webVoice) {
       const voice = webVoices.find(v => v.name === webVoice);
@@ -694,7 +710,15 @@ const App: React.FC = () => {
       setWebIsPaused(false);
       webUtteranceRef.current = null;
       setWebSpeechElapsed(0);
+      webSpeechCharIndexRef.current = 0;
+      setWebSpeechCharIndex(0);
       void tryAutoNext('tts');
+    };
+    // 有支援的瀏覽器會提供 charIndex，可用來精準同步高亮
+    (utterance as any).onboundary = (e: any) => {
+      if (e && typeof e.charIndex === 'number') {
+        webSpeechCharIndexRef.current = e.charIndex;
+      }
     };
     utterance.onerror = () => {
       setWebError('朗讀失敗，請稍後再試');
@@ -702,6 +726,8 @@ const App: React.FC = () => {
       setWebIsPaused(false);
       webUtteranceRef.current = null;
       setWebSpeechElapsed(0);
+      webSpeechCharIndexRef.current = 0;
+      setWebSpeechCharIndex(0);
     };
     webUtteranceRef.current = utterance;
     setWebIsSpeaking(true);
@@ -742,6 +768,10 @@ const App: React.FC = () => {
       const total = webSpeechTotalSec || webEstimatedDurationRef.current || 1;
       const value = Math.min(elapsed, total);
       setWebSpeechElapsed(value);
+      // 若是瀏覽器語音（非 AI），用 boundary charIndex 讓高亮更精準
+      if (!webAiPlayingRef.current) {
+        setWebSpeechCharIndex(webSpeechCharIndexRef.current);
+      }
       webSpeechTickRef.current = requestAnimationFrame(tick);
     };
     webSpeechTickRef.current = requestAnimationFrame(tick);
@@ -778,8 +808,11 @@ const App: React.FC = () => {
       const text = raw;
       const isEmpty = text.trim().length === 0;
       const start = cursor;
-      const end = isEmpty ? cursor : cursor + text.length + 1; // +1 for newline separator
-      if (!isEmpty) cursor = end;
+      // 統一計算每行佔用的字元區間（包含換行），以便與 speechSynthesis 的 charIndex 對齊
+      // 這裡用 normalized（包含空行）來對齊 utterance 的文字。
+      const hasNewline = idx < lines.length - 1;
+      const end = cursor + text.length + (hasNewline ? 1 : 0);
+      cursor = end;
       return { idx, text, isEmpty, start, end };
     });
     return { paragraphs, totalChars: cursor };
@@ -862,11 +895,19 @@ const App: React.FC = () => {
   const activeParagraphIdx = useMemo(() => {
     if (!centerFollowEnabled) return null;
     if (!webIsSpeaking || webIsPaused) return null;
-    const total = webSpeechTotalSec || webEstimatedDurationRef.current;
-    if (!total || total <= 0) return null;
     if (webParagraphData.totalChars <= 0) return null;
-    const ratio = Math.min(Math.max(webSpeechElapsed / total, 0), 0.999999);
-    const targetChar = Math.floor(ratio * webParagraphData.totalChars);
+
+    // 若為瀏覽器語音且支援 onboundary，優先使用 charIndex 做精準對齊
+    const hasBoundaryCharIndex = !webAiPlayingRef.current && webSpeechCharIndex > 0;
+    let targetChar: number;
+    if (hasBoundaryCharIndex) {
+      targetChar = Math.min(Math.max(webSpeechCharIndex, 0), webParagraphData.totalChars - 1);
+    } else {
+      const total = webSpeechTotalSec || webEstimatedDurationRef.current;
+      if (!total || total <= 0) return null;
+      const ratio = Math.min(Math.max(webSpeechElapsed / total, 0), 0.999999);
+      targetChar = Math.floor(ratio * webParagraphData.totalChars);
+    }
     let lastNonEmpty: number | null = null;
     for (const p of webParagraphData.paragraphs) {
       if (p.isEmpty) continue;
@@ -880,6 +921,7 @@ const App: React.FC = () => {
     webIsPaused,
     webSpeechElapsed,
     webSpeechTotalSec,
+    webSpeechCharIndex,
     webParagraphData
   ]);
 
@@ -1137,6 +1179,10 @@ const App: React.FC = () => {
             pendingAutoPlayAfterFetchRef.current = wasPlaying;
             void handleWebFetch(nextUrl).then((ok) => {
               if (!ok) pendingAutoPlayAfterFetchRef.current = false;
+              if (ok) {
+                const el = mainRef.current;
+                if (el) el.scrollTo({ top: 0, behavior: 'auto' });
+              }
             });
           }}
           disabled={!novel?.nextChapterUrl}
