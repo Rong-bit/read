@@ -19,6 +19,87 @@ const needsPuppeteer = (url: string): boolean => {
   return urlLower.includes('qidian.com') || urlLower.includes('webnovel.com');
 };
 
+// 清理正文中被「當成文字」插入的廣告/樣式/腳本片段（例如 ttks.tw 章節頁）
+const looksLikeInjectedCodeLine = (line: string, urlLower: string): boolean => {
+  const t = line.trim();
+  if (!t) return false;
+  const tl = t.toLowerCase();
+
+  // 常見：直接把 JS 呼叫輸出成文字
+  if (/^loadadv\(\s*\d+\s*,\s*\d+\s*\)\s*;?$/i.test(t)) return true;
+
+  // 常見：廣告容器/樣式 class 片段被輸出成文字
+  if (tl.includes('.bg-container-') || tl.includes('.bg-ssp-')) return true;
+  if (tl.includes('z-index: 2147483647')) return true;
+
+  // CSS 規則整行（避免誤殺：只在看起來像 CSS 時才濾掉）
+  const looksLikeCssRule =
+    (t.startsWith('.') || t.startsWith('#') || t.startsWith('@')) &&
+    t.includes('{') &&
+    t.includes('}') &&
+    (tl.includes('display') ||
+      tl.includes('flex') ||
+      tl.includes('z-index') ||
+      tl.includes('justify-content') ||
+      tl.includes('align-items') ||
+      tl.includes('margin-left') ||
+      tl.includes('margin-right'));
+  if (looksLikeCssRule) return true;
+
+  // 站點特化：天天看小說（ttks.tw）偶發把廣告初始化/樣式重複塞進正文
+  if (urlLower.includes('ttks.tw')) {
+    if (t.includes('loadAdv(')) return true;
+    if (t.includes('.bg-container-') || t.includes('.bg-ssp-')) return true;
+  }
+
+  return false;
+};
+
+const cleanExtractedContent = (content: string, url: string): string => {
+  const urlLower = url.toLowerCase();
+  const raw = (content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.split('\n');
+
+  const out: string[] = [];
+  let prevNonEmpty = '';
+  let emptyStreak = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isEmpty = trimmed.length === 0;
+
+    if (isEmpty) {
+      emptyStreak += 1;
+      // 保留少量空行作為段落間隔，並避免空行爆炸
+      if (emptyStreak <= 2) out.push('');
+      continue;
+    }
+
+    emptyStreak = 0;
+
+    if (looksLikeInjectedCodeLine(trimmed, urlLower)) continue;
+
+    // 壓縮連續重複行（ttks.tw 會重複輸出同一段 CSS）
+    if (trimmed === prevNonEmpty) continue;
+
+    out.push(trimmed);
+    prevNonEmpty = trimmed;
+  }
+
+  // 去除首尾空行
+  while (out.length > 0 && out[0] === '') out.shift();
+  while (out.length > 0 && out[out.length - 1] === '') out.pop();
+
+  return out.join('\n');
+};
+
+const postProcessResult = (result: NovelResult, url: string): NovelResult => {
+  return {
+    ...result,
+    content: cleanExtractedContent(result.content || '', url),
+  };
+};
+
 // 提取下一章链接
 const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | undefined => {
   const urlLower = url.toLowerCase();
@@ -626,8 +707,9 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
         console.log('提取目錄失敗（不影響主流程）:', error);
       }
       
-      console.log(`✓ 成功抓取完整內容：標題「${result.title}」，內容長度 ${result.content.length} 字，下一章: ${result.nextChapterUrl || '無'}，上一章: ${result.prevChapterUrl || '無'}`);
-      return result;
+      const processed = postProcessResult(result, url);
+      console.log(`✓ 成功抓取完整內容：標題「${processed.title}」，內容長度 ${processed.content.length} 字，下一章: ${processed.nextChapterUrl || '無'}，上一章: ${processed.prevChapterUrl || '無'}`);
+      return processed;
     }
 
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字，可能是摘要或抓取失敗）`);
@@ -670,7 +752,7 @@ const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
     console.log('提取目錄失敗（不影響主流程）:', error);
   }
   
-  return result;
+  return postProcessResult(result, url);
 };
 
 export const fetchNovelFromUrl = async (url: string, currentTitle?: string): Promise<NovelResult> => {
