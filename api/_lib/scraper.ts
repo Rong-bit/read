@@ -407,6 +407,70 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
     return undefined;
   }
 
+  // 起點中文網（手機版目錄頁含完整章節連結）
+  // 目錄頁：https://m.qidian.com/book/<bookId>/catalog
+  if (urlLower.includes('qidian.com')) {
+    try {
+      const bookIdMatch =
+        url.match(/\/chapter\/(\d+)\//) ||
+        url.match(/\/book\/(\d+)\//) ||
+        url.match(/\/book\/(\d+)/);
+      const bookId = bookIdMatch?.[1];
+      if (!bookId) return undefined;
+
+      const catalogUrl = `https://m.qidian.com/book/${bookId}/catalog`;
+      const resp = await fetch(catalogUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+          'Referer': 'https://m.qidian.com/',
+        },
+      });
+      if (!resp.ok) return undefined;
+
+      const html = await resp.text();
+      const $toc = cheerio.load(html);
+      const links = $toc('a[href*="/chapter/"]').toArray();
+
+      const chapters: ChapterItem[] = [];
+      const seen = new Set<string>();
+      const tocBase = new URL(catalogUrl).origin;
+
+      for (const a of links) {
+        const $a = $toc(a);
+        const href = ($a.attr('href') || '').trim();
+        if (!href) continue;
+
+        let title = ($a.text() || '').replace(/\s+/g, ' ').trim();
+        if (!title) continue;
+
+        // 去掉常見尾綴
+        title = title.replace(/\s*(免费|VIP)\s*$/i, '').trim();
+
+        // 去掉日期/附加資訊（目錄第一個常帶「2026-.. 作家入驻 ...」）
+        const dateIdx = title.search(/\b20\d{2}-\d{2}-\d{2}\b/);
+        if (dateIdx > 0) title = title.slice(0, dateIdx).trim();
+        const extraIdx = title.indexOf('作家入驻');
+        if (extraIdx > 0) title = title.slice(0, extraIdx).trim();
+
+        const fullUrl = resolveHref(href, tocBase, catalogUrl);
+        if (seen.has(fullUrl)) continue;
+        seen.add(fullUrl);
+
+        chapters.push({ title, url: fullUrl });
+      }
+
+      if (chapters.length > 0) {
+        console.log(`✓ 起點目錄抓取成功，共 ${chapters.length} 章`);
+        return chapters;
+      }
+    } catch (error) {
+      console.log('起點目錄抓取失敗（不影響主流程）:', error);
+    }
+  }
+
   // 稷下書院 / twword.com
   if (urlLower.includes('twword.com')) {
     try {
@@ -878,8 +942,14 @@ export const fetchNovelFromUrl = async (url: string, currentTitle?: string): Pro
 
       const nextChapterUrl = extractNextChapterUrl($, mobileUrl);
       const prevChapterUrl = extractPrevChapterUrl($, mobileUrl);
+      let chapters: ChapterItem[] | undefined;
+      try {
+        chapters = await extractChapters($, mobileUrl);
+      } catch (e) {
+        // ignore
+      }
       const processed = postProcessResult(
-        { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl },
+        { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl, chapters },
         mobileUrl
       );
       return processed;
