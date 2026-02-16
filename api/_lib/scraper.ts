@@ -14,9 +14,52 @@ export interface NovelResult {
   chapters?: ChapterItem[]; // 章節目錄
 }
 
+const isQidianUrl = (input: string): boolean => {
+  try {
+    const u = new URL(input);
+    return u.hostname === 'qidian.com' || u.hostname.endsWith('.qidian.com');
+  } catch {
+    return false;
+  }
+};
+
+const toQidianMobileChapterUrl = (input: string): string => {
+  const u = new URL(input);
+  // 已經是手機版
+  if (u.hostname === 'm.qidian.com') return u.toString();
+
+  // 桌面版章節頁：https://www.qidian.com/chapter/<bookId>/<chapterId>/
+  // 轉成手機版：https://m.qidian.com/chapter/<bookId>/<chapterId>/
+  if (u.hostname.endsWith('qidian.com') && u.pathname.startsWith('/chapter/')) {
+    const mobile = new URL(`https://m.qidian.com${u.pathname}`);
+    mobile.search = u.search;
+    mobile.hash = u.hash;
+    return mobile.toString();
+  }
+
+  // 其他 qidian 網址：至少切到 m.qidian.com 同 path（有些頁面仍可解析）
+  if (u.hostname.endsWith('qidian.com')) {
+    const mobile = new URL(`https://m.qidian.com${u.pathname}`);
+    mobile.search = u.search;
+    mobile.hash = u.hash;
+    return mobile.toString();
+  }
+
+  return input;
+};
+
+const resolveHref = (href: string, baseUrl: string, currentUrl: string): string => {
+  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  // protocol-relative，例如：//m.qidian.com/chapter/...
+  if (href.startsWith('//')) return `https:${href}`;
+  if (href.startsWith('/')) return baseUrl + href;
+  return new URL(href, currentUrl).href;
+};
+
 const needsPuppeteer = (url: string): boolean => {
   const urlLower = url.toLowerCase();
-  return urlLower.includes('qidian.com') || urlLower.includes('webnovel.com');
+  // 起點桌面版常回 202 探針頁（反爬），優先改抓 m.qidian.com（不需要 Puppeteer）
+  return urlLower.includes('webnovel.com');
 };
 
 // 清理正文中被「當成文字」插入的廣告/樣式/腳本片段（例如 ttks.tw 章節頁）
@@ -129,12 +172,10 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
       if (nextUrlMatch && nextUrlMatch[1]) {
         const nextUrl = nextUrlMatch[1];
         console.log('從腳本變量提取到下一章:', nextUrl);
-        if (nextUrl.startsWith('http')) return nextUrl;
-        if (nextUrl.startsWith('/')) return baseUrl + nextUrl;
         try {
-          return new URL(nextUrl, url).href;
+          return resolveHref(nextUrl, baseUrl, url);
         } catch {
-          return baseUrl + nextUrl;
+          return resolveHref(nextUrl, baseUrl, url);
         }
       }
     }
@@ -150,12 +191,10 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
       if (text && (text.includes('下一章') || text.includes('下一頁'))) {
         if (href) {
           console.log('從底部導航提取到下一章:', href);
-          if (href.startsWith('http')) return href;
-          if (href.startsWith('/')) return baseUrl + href;
           try {
-            return new URL(href, url).href;
+            return resolveHref(href, baseUrl, url);
           } catch {
-            return baseUrl + href;
+            return resolveHref(href, baseUrl, url);
           }
         }
       }
@@ -169,9 +208,7 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
                          return text.includes('下一章') || text.includes('下一頁');
                        }).attr('href');
     if (nextBtnLink) {
-      if (nextBtnLink.startsWith('http')) return nextBtnLink;
-      if (nextBtnLink.startsWith('/')) return baseUrl + nextBtnLink;
-      return new URL(nextBtnLink, url).href;
+      return resolveHref(nextBtnLink, baseUrl, url);
     }
     
     // 如果所有方法都失敗，嘗試從 URL 模式推斷下一章（僅作為最後手段）
@@ -195,12 +232,10 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
     const href = $link.attr('href');
     if (href && (text.includes('下一章') || text.includes('下一頁') || text.includes('下一页'))) {
       console.log('從通用鏈接提取到下一章:', href);
-      if (href.startsWith('http')) return href;
-      if (href.startsWith('/')) return baseUrl + href;
       try {
-        return new URL(href, url).href;
+        return resolveHref(href, baseUrl, url);
       } catch {
-        return baseUrl + href;
+        return resolveHref(href, baseUrl, url);
       }
     }
   }
@@ -238,12 +273,10 @@ const extractPrevChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
       if (prevUrlMatch && prevUrlMatch[1]) {
         const prevUrl = prevUrlMatch[1];
         console.log('從腳本變量提取到上一章:', prevUrl);
-        if (prevUrl.startsWith('http')) return prevUrl;
-        if (prevUrl.startsWith('/')) return baseUrl + prevUrl;
         try {
-          return new URL(prevUrl, url).href;
+          return resolveHref(prevUrl, baseUrl, url);
         } catch {
-          return baseUrl + prevUrl;
+          return resolveHref(prevUrl, baseUrl, url);
         }
       }
     }
@@ -257,12 +290,10 @@ const extractPrevChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
       if (text && (text.includes('上一章') || text.includes('上一頁'))) {
         if (href) {
           console.log('從底部導航提取到上一章:', href);
-          if (href.startsWith('http')) return href;
-          if (href.startsWith('/')) return baseUrl + href;
           try {
-            return new URL(href, url).href;
+            return resolveHref(href, baseUrl, url);
           } catch {
-            return baseUrl + href;
+            return resolveHref(href, baseUrl, url);
           }
         }
       }
@@ -276,9 +307,7 @@ const extractPrevChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
                          return text.includes('上一章') || text.includes('上一頁');
                        }).attr('href');
     if (prevBtnLink) {
-      if (prevBtnLink.startsWith('http')) return prevBtnLink;
-      if (prevBtnLink.startsWith('/')) return baseUrl + prevBtnLink;
-      return new URL(prevBtnLink, url).href;
+      return resolveHref(prevBtnLink, baseUrl, url);
     }
     
     // 如果所有方法都失敗，嘗試從 URL 模式推斷上一章（僅作為最後手段）
@@ -304,12 +333,10 @@ const extractPrevChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
     const href = $link.attr('href');
     if (href && (text.includes('上一章') || text.includes('上一頁') || text.includes('上一页'))) {
       console.log('從通用鏈接提取到上一章:', href);
-      if (href.startsWith('http')) return href;
-      if (href.startsWith('/')) return baseUrl + href;
       try {
-        return new URL(href, url).href;
+        return resolveHref(href, baseUrl, url);
       } catch {
-        return baseUrl + href;
+        return resolveHref(href, baseUrl, url);
       }
     }
   }
@@ -723,9 +750,21 @@ const fetchWithPuppeteer = async (url: string): Promise<NovelResult> => {
 };
 
 const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
-  const response = await fetch(url, {
+  // 起點桌面版常被反爬，優先改抓手機版
+  const effectiveUrl = isQidianUrl(url) ? toQidianMobileChapterUrl(url) : url;
+  const isQidianMobile = (() => {
+    try {
+      return new URL(effectiveUrl).hostname === 'm.qidian.com';
+    } catch {
+      return false;
+    }
+  })();
+
+  const response = await fetch(effectiveUrl, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': isQidianMobile
+        ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1'
+        : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8'
     }
@@ -737,14 +776,14 @@ const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
 
   const html = await response.text();
   const $ = cheerio.load(html);
-  const result = extractContent($, url);
+  const result = extractContent($, effectiveUrl);
   if (!result || result.content.length < 200) {
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字，可能是摘要或抓取失敗）`);
   }
   
   // 提取目錄
   try {
-    const chapters = await extractChapters($, url);
+    const chapters = await extractChapters($, effectiveUrl);
     if (chapters && chapters.length > 0) {
       result.chapters = chapters;
     }
@@ -752,11 +791,48 @@ const fetchWithCheerio = async (url: string): Promise<NovelResult> => {
     console.log('提取目錄失敗（不影響主流程）:', error);
   }
   
-  return postProcessResult(result, url);
+  return postProcessResult(result, effectiveUrl);
 };
 
 export const fetchNovelFromUrl = async (url: string, currentTitle?: string): Promise<NovelResult> => {
   try {
+    // 起點：直接抓手機版（避免桌面版 202 探針頁）
+    if (isQidianUrl(url)) {
+      const mobileUrl = toQidianMobileChapterUrl(url);
+      const response = await fetch(mobileUrl, {
+        headers: {
+          // 用行動裝置 UA，回到含正文的 HTML
+          'User-Agent':
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+          'Referer': 'https://m.qidian.com/',
+        },
+      });
+      if (!response.ok) throw new Error(`HTTP 錯誤: ${response.status}`);
+
+      const html = await response.text();
+      const $ = cheerio.load(html);
+
+      const title = $('h1').first().text().trim() || $('title').text().trim();
+      const paragraphs = $('main p')
+        .map((_, el) => $(el).text().trim())
+        .get()
+        .filter(t => t.length > 0);
+      const content = paragraphs.join('\n\n');
+      if (content.length < 200) {
+        throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${content.length} 字，可能是摘要或抓取失敗）`);
+      }
+
+      const nextChapterUrl = extractNextChapterUrl($, mobileUrl);
+      const prevChapterUrl = extractPrevChapterUrl($, mobileUrl);
+      const processed = postProcessResult(
+        { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl },
+        mobileUrl
+      );
+      return processed;
+    }
+
     if (!needsPuppeteer(url)) {
       try {
         return await fetchWithCheerio(url);
