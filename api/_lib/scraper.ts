@@ -447,7 +447,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
       .join('\n\n');
     if (content.length > 100) {
       const nextChapterUrl = extractNextChapterUrl($, url);
-      return { title, content, sourceUrl: url, nextChapterUrl };
+      const prevChapterUrl = extractPrevChapterUrl($, url);
+      return { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl };
     }
   }
 
