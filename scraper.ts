@@ -9,6 +9,77 @@ const isLikelySimplified = (text: string): boolean =>
   /[国语这说们会时发无为经过还与来对]/u.test(text);
 const toTraditional = (text: string): string => s2tConverter(text);
 
+// 清理正文中被「當成文字」插入的廣告/樣式/腳本片段（例如 ttks.tw 章節頁）
+const looksLikeInjectedCodeLine = (line: string, urlLower: string): boolean => {
+  const t = line.trim();
+  if (!t) return false;
+  const tl = t.toLowerCase();
+
+  if (/^loadadv\(\s*\d+\s*,\s*\d+\s*\)\s*;?$/i.test(t)) return true;
+  if (tl.includes('.bg-container-') || tl.includes('.bg-ssp-')) return true;
+  if (tl.includes('z-index: 2147483647')) return true;
+
+  const looksLikeCssRule =
+    (t.startsWith('.') || t.startsWith('#') || t.startsWith('@')) &&
+    t.includes('{') &&
+    t.includes('}') &&
+    (tl.includes('display') ||
+      tl.includes('flex') ||
+      tl.includes('z-index') ||
+      tl.includes('justify-content') ||
+      tl.includes('align-items') ||
+      tl.includes('margin-left') ||
+      tl.includes('margin-right'));
+  if (looksLikeCssRule) return true;
+
+  if (urlLower.includes('ttks.tw')) {
+    if (t.includes('loadAdv(')) return true;
+    if (t.includes('.bg-container-') || t.includes('.bg-ssp-')) return true;
+  }
+
+  return false;
+};
+
+const cleanExtractedContent = (content: string, url: string): string => {
+  const urlLower = url.toLowerCase();
+  const raw = (content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = raw.split('\n');
+
+  const out: string[] = [];
+  let prevNonEmpty = '';
+  let emptyStreak = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isEmpty = trimmed.length === 0;
+
+    if (isEmpty) {
+      emptyStreak += 1;
+      if (emptyStreak <= 2) out.push('');
+      continue;
+    }
+
+    emptyStreak = 0;
+
+    if (looksLikeInjectedCodeLine(trimmed, urlLower)) continue;
+    if (trimmed === prevNonEmpty) continue;
+
+    out.push(trimmed);
+    prevNonEmpty = trimmed;
+  }
+
+  while (out.length > 0 && out[0] === '') out.shift();
+  while (out.length > 0 && out[out.length - 1] === '') out.pop();
+  return out.join('\n');
+};
+
+const postProcessResult = (result: NovelResult, url: string): NovelResult => {
+  return {
+    ...result,
+    content: cleanExtractedContent(result.content || '', url),
+  };
+};
+
 const applySimplifiedToTraditional = (result: NovelResult): NovelResult => {
   if (!result.content || !isLikelySimplified(result.content)) return result;
   return {
@@ -556,7 +627,8 @@ export const fetchNovelFromUrl = async (
     } else {
       result = await fetchWithPuppeteer(url);
     }
-    return applySimplifiedToTraditional(result);
+    // 先清理垃圾行，再做簡轉繁（避免把垃圾行也「轉換」成正文的一部分）
+    return applySimplifiedToTraditional(postProcessResult(result, url));
   } catch (error: any) {
     throw new Error(`抓取失敗: ${error.message}`);
   }
