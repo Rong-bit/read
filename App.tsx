@@ -1078,7 +1078,7 @@ const App: React.FC = () => {
                   style={{ fontSize: `${fontSize}px` }}
                   className="w-full break-words leading-relaxed"
                 >
-                  <div className={`${centerFollowEnabled ? 'py-[40vh]' : 'py-3'}`}>
+                  <div className={`${centerFollowEnabled ? 'pt-3 pb-[40vh]' : 'py-3'}`}>
                     {webParagraphData.paragraphs.map((p) => {
                       if (p.isEmpty) {
                         return <div key={p.idx} className="h-4" aria-hidden="true" />;
