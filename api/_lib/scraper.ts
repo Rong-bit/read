@@ -471,6 +471,70 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
     }
   }
 
+  // 縱橫中文網（zongheng.com）
+  // 章節頁（read/book）：https://read.zongheng.com/chapter/<bookId>/<chapterId>.html
+  // 目錄頁：https://book.zongheng.com/showchapter/<bookId>.html
+  if (urlLower.includes('zongheng.com')) {
+    try {
+      const bookIdMatch =
+        url.match(/\/chapter\/(\d+)\//) ||
+        url.match(/\/showchapter\/(\d+)\.html/) ||
+        url.match(/\/book\/(\d+)\.html/);
+      const bookId = bookIdMatch?.[1];
+      if (!bookId) return undefined;
+
+      const catalogUrl = `https://book.zongheng.com/showchapter/${bookId}.html`;
+      const resp = await fetch(catalogUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          'Referer': 'https://book.zongheng.com/',
+        },
+      });
+      if (!resp.ok) return undefined;
+
+      const html = await resp.text();
+      const $toc = cheerio.load(html);
+
+      // 目錄頁有多個區塊（分卷），但章節連結都落在 a[href*="/chapter/"]
+      const links = $toc('a[href*="/chapter/"]').toArray();
+      const chapters: ChapterItem[] = [];
+      const seen = new Set<string>();
+
+      for (const a of links) {
+        const $a = $toc(a);
+        const href = ($a.attr('href') || '').trim();
+        if (!href) continue;
+
+        const fullUrl = resolveHref(href, 'https://book.zongheng.com', catalogUrl);
+
+        // 僅保留「本書」章節頁：/chapter/<bookId>/<chapterId>.html
+        const m = fullUrl.match(/\/chapter\/(\d+)\/(\d+)\.html/i);
+        if (!m) continue;
+        if (m[1] !== bookId) continue;
+
+        let title = ($a.text() || '').replace(/\s+/g, ' ').trim();
+        if (!title) continue;
+
+        // 轉成 read 域名（避免不同子域混用）
+        const canonicalUrl = `https://read.zongheng.com/chapter/${bookId}/${m[2]}.html`;
+        if (seen.has(canonicalUrl)) continue;
+        seen.add(canonicalUrl);
+
+        chapters.push({ title, url: canonicalUrl });
+      }
+
+      if (chapters.length > 0) {
+        console.log(`✓ 縱橫目錄抓取成功，共 ${chapters.length} 章`);
+        return chapters;
+      }
+    } catch (error) {
+      console.log('縱橫目錄抓取失敗（不影響主流程）:', error);
+    }
+  }
+
   // 稷下書院 / twword.com
   if (urlLower.includes('twword.com')) {
     try {
