@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Header from './components/header.tsx';
 import Sidebar from './components/sidebar.tsx';
 import { NovelContent, ReaderState } from './types.ts';
@@ -14,6 +14,16 @@ const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_WEB_LIST = 'web_reader_list';
 const STORAGE_KEY_GEMINI_API_KEY = 'gemini_reader_api_key';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
+const STORAGE_KEY_BOOKMARKS = 'gemini_reader_bookmarks_v1';
+
+type BookmarkItem = {
+  id: string;
+  createdAt: number;
+  sourceUrl: string; // 章節網址（若無則用 webUrl 或空字串）
+  title: string; // 顯示用：章節/小說標題
+  paragraphIdx: number;
+  snippet: string;
+};
 
 function getNovelText(novel: NovelContent | null): string {
   if (!novel) return '';
@@ -81,6 +91,12 @@ const App: React.FC = () => {
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [useAiReading, setUseAiReading] = useState(false);
   const [webAiLoading, setWebAiLoading] = useState(false);
+  const [centerFollowEnabled, setCenterFollowEnabled] = useState(true);
+  const [autoNextEnabled, setAutoNextEnabled] = useState(true);
+  const [isEditingText, setIsEditingText] = useState(false);
+  const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
+  const [bookmarkToast, setBookmarkToast] = useState<string | null>(null);
 
   // --- Refs ---
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -97,6 +113,14 @@ const App: React.FC = () => {
   const webAiPlayingRef = useRef(false);
   const [webSpeechElapsed, setWebSpeechElapsed] = useState(0);
   const [webSpeechTotalSec, setWebSpeechTotalSec] = useState(0);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollCheckRafRef = useRef<number | null>(null);
+  const autoNextInFlightRef = useRef(false);
+  const lastAutoNextAtRef = useRef<number>(0);
+  const lastAutoNextFromRef = useRef<string>('');
+  const paragraphElsRef = useRef(new Map<number, HTMLElement>());
+  const pendingScrollToParagraphRef = useRef<number | null>(null);
+  const lastFetchedUrlRef = useRef<string>('');
 
   // --- Initialization ---
   useEffect(() => {
@@ -108,6 +132,8 @@ const App: React.FC = () => {
       setPlaybackRate(s.playbackRate ?? 0.8);
       setFontSize(s.fontSize ?? 18);
       setTheme(s.theme || 'dark');
+      setCenterFollowEnabled(s.centerFollowEnabled ?? true);
+      setAutoNextEnabled(s.autoNextEnabled ?? true);
     }
 
     const savedWebRate = localStorage.getItem(STORAGE_KEY_WEB_RATE);
@@ -143,12 +169,20 @@ const App: React.FC = () => {
         setTimeout(() => setShowResumeToast(false), 3000);
       }
     }
+
+    const savedBookmarks = localStorage.getItem(STORAGE_KEY_BOOKMARKS);
+    if (savedBookmarks) {
+      try {
+        const list = JSON.parse(savedBookmarks);
+        if (Array.isArray(list)) setBookmarks(list);
+      } catch {}
+    }
   }, []);
 
   useEffect(() => {
-    const settings = { voice, volume, playbackRate, fontSize, theme };
+    const settings = { voice, volume, playbackRate, fontSize, theme, centerFollowEnabled, autoNextEnabled };
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-  }, [voice, volume, playbackRate, fontSize, theme]);
+  }, [voice, volume, playbackRate, fontSize, theme, centerFollowEnabled, autoNextEnabled]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_WEB_RATE, String(webRate));
@@ -161,6 +195,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_WEB_LIST, JSON.stringify(webList));
   }, [webList]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_BOOKMARKS, JSON.stringify(bookmarks));
+  }, [bookmarks]);
 
   useEffect(() => {
     if (geminiApiKey !== undefined) localStorage.setItem(STORAGE_KEY_GEMINI_API_KEY, geminiApiKey);
@@ -425,6 +463,7 @@ const App: React.FC = () => {
       setWebTitle(data.title || '');
       setWebText(data.content || '');
       setWebUrl(url);
+      lastFetchedUrlRef.current = url;
       if (data.title || data.content || data.nextChapterUrl || data.prevChapterUrl || data.chapters) {
         setNovel({
           title: data.title || '',
@@ -451,6 +490,58 @@ const App: React.FC = () => {
       setWebLoading(false);
     }
   };
+
+  const tryAutoNext = async (reason: 'scroll' | 'tts') => {
+    if (!autoNextEnabled) return;
+    if (isEditingText) return;
+    if (webLoading) return;
+    const nextUrl = novel?.nextChapterUrl;
+    if (!nextUrl) return;
+
+    const fromKey = novel?.sourceUrl ?? webUrl ?? '';
+    const now = Date.now();
+    if (autoNextInFlightRef.current) return;
+    if (fromKey && lastAutoNextFromRef.current === fromKey && now - lastAutoNextAtRef.current < 4000) return;
+
+    autoNextInFlightRef.current = true;
+    lastAutoNextFromRef.current = fromKey;
+    lastAutoNextAtRef.current = now;
+    try {
+      const ok = await handleWebFetch(nextUrl);
+      if (ok) {
+        window.scrollTo({ top: 0, behavior: reason === 'scroll' ? 'auto' : 'smooth' });
+      }
+    } finally {
+      autoNextInFlightRef.current = false;
+    }
+  };
+
+  const checkScrollForAutoNext = () => {
+    if (!autoNextEnabled) return;
+    if (isEditingText) return;
+    const el = mainRef.current;
+    if (!el) return;
+    const threshold = 160;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - threshold) {
+      void tryAutoNext('scroll');
+    }
+  };
+
+  const handleMainScroll = () => {
+    if (!autoNextEnabled) return;
+    if (isEditingText) return;
+    if (scrollCheckRafRef.current != null) return;
+    scrollCheckRafRef.current = window.requestAnimationFrame(() => {
+      scrollCheckRafRef.current = null;
+      checkScrollForAutoNext();
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scrollCheckRafRef.current != null) cancelAnimationFrame(scrollCheckRafRef.current);
+    };
+  }, []);
 
   const handleWebPaste = async () => {
     try {
@@ -527,6 +618,7 @@ const App: React.FC = () => {
           setWebIsPaused(false);
           setWebSpeechElapsed(0);
           setWebAiLoading(false);
+          void tryAutoNext('tts');
           return;
         }
         try {
@@ -553,7 +645,11 @@ const App: React.FC = () => {
             webAiPlayingRef.current = true;
             setWebIsSpeaking(true);
             setWebIsPaused(false);
-            setWebSpeechTotalSec(audioBuffer.duration * segments.length);
+            {
+              const totalSec = audioBuffer.duration * segments.length;
+              setWebSpeechTotalSec(totalSec);
+              webEstimatedDurationRef.current = totalSec;
+            }
             setWebSpeechElapsed(0);
             webSpeechStartTimeRef.current = Date.now();
             setWebAiLoading(false);
@@ -597,6 +693,7 @@ const App: React.FC = () => {
       setWebIsPaused(false);
       webUtteranceRef.current = null;
       setWebSpeechElapsed(0);
+      void tryAutoNext('tts');
     };
     utterance.onerror = () => {
       setWebError('朗讀失敗，請稍後再試');
@@ -630,7 +727,7 @@ const App: React.FC = () => {
     if (!webIsSpeaking || webIsPaused) return;
     const tick = () => {
       const elapsed = (Date.now() - webSpeechStartTimeRef.current) / 1000;
-      const total = webEstimatedDurationRef.current || 1;
+      const total = webSpeechTotalSec || webEstimatedDurationRef.current || 1;
       const value = Math.min(elapsed, total);
       setWebSpeechElapsed(value);
       webSpeechTickRef.current = requestAnimationFrame(tick);
@@ -660,6 +757,126 @@ const App: React.FC = () => {
   const handleWebDeleteFromList = (id: string) => {
     setWebList(prev => prev.filter(i => i.id !== id));
   };
+
+  const webParagraphData = useMemo(() => {
+    const normalized = (webText || '').replace(/\r\n/g, '\n');
+    const lines = normalized.split('\n');
+    let cursor = 0;
+    const paragraphs = lines.map((raw, idx) => {
+      const text = raw;
+      const isEmpty = text.trim().length === 0;
+      const start = cursor;
+      const end = isEmpty ? cursor : cursor + text.length + 1; // +1 for newline separator
+      if (!isEmpty) cursor = end;
+      return { idx, text, isEmpty, start, end };
+    });
+    return { paragraphs, totalChars: cursor };
+  }, [webText]);
+
+  // 內容變更時清空 ref map，避免舊節點殘留
+  useEffect(() => {
+    paragraphElsRef.current.clear();
+  }, [webText]);
+
+  const getParagraphIdxClosestToCenter = () => {
+    const el = mainRef.current;
+    if (!el) return null;
+    const centerY = el.getBoundingClientRect().top + el.clientHeight / 2;
+    let bestIdx: number | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const [idx, pEl] of paragraphElsRef.current.entries()) {
+      const rect = pEl.getBoundingClientRect();
+      const pCenter = rect.top + rect.height / 2;
+      const dist = Math.abs(pCenter - centerY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = idx;
+      }
+    }
+    return bestIdx;
+  };
+
+  const addBookmark = () => {
+    const paragraphIdx =
+      activeParagraphIdx ?? getParagraphIdxClosestToCenter() ?? 0;
+    const para = webParagraphData.paragraphs.find(p => p.idx === paragraphIdx);
+    const snippetRaw = para?.text ?? '';
+    const snippet = snippetRaw.trim().slice(0, 80);
+    const sourceUrl = novel?.sourceUrl ?? lastFetchedUrlRef.current ?? webUrl ?? '';
+    const title = (webTitle || novel?.title || '未命名章節').trim();
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const item: BookmarkItem = {
+      id,
+      createdAt: Date.now(),
+      sourceUrl,
+      title,
+      paragraphIdx,
+      snippet: snippet || '(空白段落)'
+    };
+    setBookmarks(prev => [item, ...prev]);
+    setBookmarkToast('已加入畫籤');
+    window.setTimeout(() => setBookmarkToast(null), 1600);
+  };
+
+  const deleteBookmark = (id: string) => {
+    setBookmarks(prev => prev.filter(b => b.id !== id));
+  };
+
+  const clearBookmarks = () => {
+    setBookmarks([]);
+  };
+
+  const jumpToBookmark = async (bm: BookmarkItem) => {
+    setIsBookmarksOpen(false);
+    if (bm.sourceUrl && (novel?.sourceUrl || lastFetchedUrlRef.current || webUrl) && bm.sourceUrl !== (novel?.sourceUrl ?? lastFetchedUrlRef.current ?? webUrl)) {
+      pendingScrollToParagraphRef.current = bm.paragraphIdx;
+      await handleWebFetch(bm.sourceUrl);
+      return;
+    }
+    const el = paragraphElsRef.current.get(bm.paragraphIdx);
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    const idx = pendingScrollToParagraphRef.current;
+    if (idx == null) return;
+    // 等段落節點建立後再捲動
+    const el = paragraphElsRef.current.get(idx);
+    if (!el) return;
+    pendingScrollToParagraphRef.current = null;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [webText]);
+
+  const activeParagraphIdx = useMemo(() => {
+    if (!centerFollowEnabled) return null;
+    if (!webIsSpeaking || webIsPaused) return null;
+    const total = webSpeechTotalSec || webEstimatedDurationRef.current;
+    if (!total || total <= 0) return null;
+    if (webParagraphData.totalChars <= 0) return null;
+    const ratio = Math.min(Math.max(webSpeechElapsed / total, 0), 0.999999);
+    const targetChar = Math.floor(ratio * webParagraphData.totalChars);
+    let lastNonEmpty: number | null = null;
+    for (const p of webParagraphData.paragraphs) {
+      if (p.isEmpty) continue;
+      lastNonEmpty = p.idx;
+      if (targetChar >= p.start && targetChar < p.end) return p.idx;
+    }
+    return lastNonEmpty;
+  }, [
+    centerFollowEnabled,
+    webIsSpeaking,
+    webIsPaused,
+    webSpeechElapsed,
+    webSpeechTotalSec,
+    webParagraphData
+  ]);
+
+  useEffect(() => {
+    if (activeParagraphIdx == null) return;
+    const el = paragraphElsRef.current.get(activeParagraphIdx);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [activeParagraphIdx]);
 
   const getThemeClass = () => {
     switch(theme) {
@@ -718,7 +935,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-32">
+      <main
+        ref={(el) => { mainRef.current = el; }}
+        onScroll={handleMainScroll}
+        className={`flex-1 overflow-y-auto px-4 md:px-8 pb-32 ${centerFollowEnabled && !isEditingText ? 'snap-y snap-proximity' : ''}`}
+      >
 
        <div className="w-full pt-6 md:pt-10">
 
@@ -777,24 +998,57 @@ const App: React.FC = () => {
                 </header>
               )}
               
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                  {isEditingText ? '編輯模式' : '閱讀模式'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingText(v => !v)}
+                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-slate-200 transition-colors"
+                >
+                  {isEditingText ? '完成' : '編輯'}
+                </button>
+              </div>
 
-
-<div
-  contentEditable
-  suppressContentEditableWarning
-  onInput={(e) => setWebText(e.currentTarget.innerText)}
-  style={{ fontSize: `${fontSize}px` }}
-  className="
-    w-full
-    whitespace-pre-wrap
-    break-words
-    leading-relaxed
-    outline-none
-    py-3
-  "
->
-  {webText}
-</div>
+              {isEditingText ? (
+                <textarea
+                  value={webText}
+                  onChange={(e) => setWebText(e.target.value)}
+                  style={{ fontSize: `${fontSize}px` }}
+                  className="w-full min-h-[60vh] rounded-2xl bg-white/5 border border-white/10 p-4 whitespace-pre-wrap break-words leading-relaxed outline-none"
+                  placeholder="貼上文字或抓取內容後可在此編輯"
+                />
+              ) : (
+                <div
+                  style={{ fontSize: `${fontSize}px` }}
+                  className="w-full break-words leading-relaxed"
+                >
+                  <div className={`${centerFollowEnabled ? 'py-[40vh]' : 'py-3'}`}>
+                    {webParagraphData.paragraphs.map((p) => {
+                      if (p.isEmpty) {
+                        return <div key={p.idx} className="h-4" aria-hidden="true" />;
+                      }
+                      const isActive = activeParagraphIdx === p.idx && webIsSpeaking && !webIsPaused;
+                      return (
+                        <p
+                          key={p.idx}
+                          ref={(el) => {
+                            if (el) paragraphElsRef.current.set(p.idx, el);
+                            else paragraphElsRef.current.delete(p.idx);
+                          }}
+                          data-paragraph-idx={p.idx}
+                          className={`whitespace-pre-wrap mb-4 px-2 py-1 rounded-xl transition-colors snap-center ${
+                            isActive ? 'bg-indigo-500/10 ring-1 ring-indigo-500/20' : ''
+                          }`}
+                        >
+                          {p.text}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
             </div>
         </div>
@@ -836,6 +1090,33 @@ const App: React.FC = () => {
         </button>
         <button
           type="button"
+          onClick={addBookmark}
+          disabled={!webText.trim()}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-slate-300 transition-colors"
+          title="加入畫籤"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsBookmarksOpen(true)}
+          disabled={bookmarks.length === 0}
+          className="flex-shrink-0 w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-slate-300 transition-colors"
+          title="畫籤清單"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 6h13"/>
+            <path d="M8 12h13"/>
+            <path d="M8 18h13"/>
+            <path d="M3 6h.01"/>
+            <path d="M3 12h.01"/>
+            <path d="M3 18h.01"/>
+          </svg>
+        </button>
+        <button
+          type="button"
           onClick={() => novel?.nextChapterUrl && handleWebFetch(novel.nextChapterUrl)}
           disabled={!novel?.nextChapterUrl}
           className="flex-shrink-0 w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-slate-300 transition-colors"
@@ -844,6 +1125,12 @@ const App: React.FC = () => {
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
       </div>
+
+      {bookmarkToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[120] bg-slate-900/95 border border-white/10 text-slate-100 px-4 py-2 rounded-full text-sm font-bold shadow-2xl backdrop-blur-md">
+          {bookmarkToast}
+        </div>
+      )}
 
       {/* Settings Modal */}
       {isSettingsOpen && (
@@ -855,6 +1142,27 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-8">
               <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">小說內容字體大小 ({fontSize}px)</label><input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
+              <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">閱讀行為</div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={centerFollowEnabled}
+                    onChange={(e) => setCenterFollowEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-300">跟讀置中（段落置中）</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoNextEnabled}
+                    onChange={(e) => setAutoNextEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-300">自動下一章（滾到底/朗讀結束）</span>
+                </label>
+              </div>
 <div>
   <label className="block text-sm font-bold text-slate-400 mb-4 uppercase tracking-widest">
     閱讀主題
@@ -891,6 +1199,80 @@ const App: React.FC = () => {
 
             </div>
             <button onClick={() => setIsSettingsOpen(false)} className="w-full mt-10 py-5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl transition-all shadow-xl shadow-indigo-600/20">確認儲存</button>
+          </div>
+        </div>
+      )}
+
+      {/* Bookmarks Modal */}
+      {isBookmarksOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsBookmarksOpen(false)}>
+          <div className="bg-slate-900 border border-white/10 w-full max-w-lg rounded-[2rem] p-6 md:p-8 shadow-2xl text-slate-100 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold">畫籤</h2>
+                <p className="text-slate-400 text-sm mt-1">點擊畫籤即可跳回閱讀位置</p>
+              </div>
+              <button type="button" onClick={() => setIsBookmarksOpen(false)} className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <button
+                type="button"
+                onClick={addBookmark}
+                disabled={!webText.trim()}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm"
+              >
+                新增目前畫籤
+              </button>
+              <button
+                type="button"
+                onClick={clearBookmarks}
+                disabled={bookmarks.length === 0}
+                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-40 text-slate-200 font-bold text-sm"
+              >
+                清空
+              </button>
+            </div>
+
+            {bookmarks.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-white/5 border border-white/10 text-center text-slate-400">
+                尚無畫籤。閱讀時點底部「加入畫籤」即可建立。
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                {bookmarks.map(bm => (
+                  <div key={bm.id} className="p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                    <button type="button" onClick={() => void jumpToBookmark(bm)} className="w-full text-left">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-slate-100 truncate">{bm.title || '未命名章節'}</div>
+                          <div className="text-xs text-slate-400 mt-1 truncate">
+                            {bm.snippet}
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-bold whitespace-nowrap">
+                          #{bm.paragraphIdx}
+                        </div>
+                      </div>
+                    </button>
+                    <div className="flex items-center justify-between mt-3">
+                      <div className="text-[10px] text-slate-500 font-mono truncate">
+                        {bm.sourceUrl || '(無網址)'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteBookmark(bm.id)}
+                        className="text-xs font-bold text-red-300 hover:text-red-200 px-3 py-1 rounded-lg hover:bg-red-500/10"
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
