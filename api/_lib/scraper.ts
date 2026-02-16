@@ -152,6 +152,32 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
   } catch {
     return undefined;
   }
+
+  // 起點（手機版）：「下一章」有時不在 a 文本中，藏在腳本資料中
+  if (urlLower.includes('m.qidian.com') && urlLower.includes('/chapter/')) {
+    const pathMatch = url.match(/\/chapter\/(\d+)\/(\d+)\//);
+    const bookId = pathMatch?.[1];
+    if (bookId) {
+      const scriptsText = $('script')
+        .toArray()
+        .map(s => ($(s).html() || $(s).text() || '').toString())
+        .join('\n');
+
+      const nextIdMatch =
+        scriptsText.match(/"next"\s*:\s*(\d{6,})/) ||
+        scriptsText.match(/\bnext\s*[:=]\s*(\d{6,})/);
+      if (nextIdMatch?.[1]) {
+        return `https://m.qidian.com/chapter/${bookId}/${nextIdMatch[1]}/`;
+      }
+
+      const nextUrlMatch =
+        scriptsText.match(/"nextUrl"\s*:\s*"([^"]+)"/) ||
+        scriptsText.match(/nextUrl\s*[:=]\s*['"]([^'"]+)['"]/);
+      if (nextUrlMatch?.[1]) {
+        return resolveHref(nextUrlMatch[1], baseUrl, url);
+      }
+    }
+  }
   
   // 稷下書院 / twword.com - 从脚本变量中提取
   if (urlLower.includes('twword.com')) {
@@ -252,6 +278,32 @@ const extractPrevChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
     baseUrl = new URL(url).origin;
   } catch {
     return undefined;
+  }
+
+  // 起點（手機版）：「上一章」常不以文字 a 呈現，需從腳本資料抓 prev/preUrl
+  if (urlLower.includes('m.qidian.com') && urlLower.includes('/chapter/')) {
+    const pathMatch = url.match(/\/chapter\/(\d+)\/(\d+)\//);
+    const bookId = pathMatch?.[1];
+    if (bookId) {
+      const scriptsText = $('script')
+        .toArray()
+        .map(s => ($(s).html() || $(s).text() || '').toString())
+        .join('\n');
+
+      const prevIdMatch =
+        scriptsText.match(/"prev"\s*:\s*(\d{6,})/) ||
+        scriptsText.match(/\bprev\s*[:=]\s*(\d{6,})/);
+      if (prevIdMatch?.[1]) {
+        return `https://m.qidian.com/chapter/${bookId}/${prevIdMatch[1]}/`;
+      }
+
+      const preUrlMatch =
+        scriptsText.match(/"preUrl"\s*:\s*"([^"]+)"/) ||
+        scriptsText.match(/preUrl\s*[:=]\s*['"]([^'"]+)['"]/);
+      if (preUrlMatch?.[1]) {
+        return resolveHref(preUrlMatch[1], baseUrl, url);
+      }
+    }
   }
   
   // 稷下書院 / twword.com - 从脚本变量中提取
