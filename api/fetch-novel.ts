@@ -1,11 +1,4 @@
-// 在 Vercel 的 Serverless Function 中，建議不要用 `.js` 副檔名去 import `.ts` 檔，
-// 否則打包後可能找不到對應模組而導致整個 API 直接 500。
-import { fetchNovelFromUrl } from './_lib/scraper';
-
-// 明確指定使用 Node.js runtime（需要使用 cheerio / puppeteer-core 等 Node 能力）
-export const config = {
-  runtime: 'nodejs',
-};
+import { fetchNovelFromUrl } from './_lib/scraper.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
