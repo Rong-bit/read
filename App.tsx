@@ -6,6 +6,7 @@ import { NovelContent, ReaderState } from './types.ts';
 import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
 import { getSafeOpenUrl } from './utils/urlUtils.ts';
+import { convertSimplifiedToTraditional } from './utils/chineseConvert.ts';
 
 const STORAGE_KEY_SETTINGS = 'gemini_reader_settings';
 const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
@@ -94,6 +95,7 @@ const App: React.FC = () => {
   const [webAiLoading, setWebAiLoading] = useState(false);
   const [centerFollowEnabled, setCenterFollowEnabled] = useState(true);
   const [autoNextEnabled, setAutoNextEnabled] = useState(true);
+  const [convertToTraditionalEnabled, setConvertToTraditionalEnabled] = useState(false);
   const [isEditingText, setIsEditingText] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
@@ -158,6 +160,7 @@ const App: React.FC = () => {
       setTheme(s.theme || 'dark');
       setCenterFollowEnabled(s.centerFollowEnabled ?? true);
       setAutoNextEnabled(s.autoNextEnabled ?? true);
+      setConvertToTraditionalEnabled(s.convertToTraditionalEnabled ?? false);
     }
 
     const savedWebRate = localStorage.getItem(STORAGE_KEY_WEB_RATE);
@@ -204,9 +207,9 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const settings = { voice, volume, playbackRate, fontSize, theme, centerFollowEnabled, autoNextEnabled };
+    const settings = { voice, volume, playbackRate, fontSize, theme, centerFollowEnabled, autoNextEnabled, convertToTraditionalEnabled };
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
-  }, [voice, volume, playbackRate, fontSize, theme, centerFollowEnabled, autoNextEnabled]);
+  }, [voice, volume, playbackRate, fontSize, theme, centerFollowEnabled, autoNextEnabled, convertToTraditionalEnabled]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_WEB_RATE, String(webRate));
@@ -352,7 +355,8 @@ const App: React.FC = () => {
   };
 
   const playAudio = async () => {
-    const text = getNovelText(novel);
+    const rawText = getNovelText(novel);
+    const text = convertToTraditionalEnabled ? convertSimplifiedToTraditional(rawText) : rawText;
     if (!novel) {
       setError('請先輸入小說網址並載入內容');
       return;
@@ -595,6 +599,17 @@ const App: React.FC = () => {
     }
   };
 
+  const effectiveWebText = useMemo(() => {
+    if (!convertToTraditionalEnabled) return webText;
+    return convertSimplifiedToTraditional(webText);
+  }, [webText, convertToTraditionalEnabled]);
+
+  const effectiveDisplayTitle = useMemo(() => {
+    const t = (webTitle || novel?.title || '小說').trim();
+    if (!convertToTraditionalEnabled) return t;
+    return convertSimplifiedToTraditional(t);
+  }, [webTitle, novel?.title, convertToTraditionalEnabled]);
+
   const handleWebPlayPause = async () => {
     // 若正在以 AI 朗讀：暫停/繼續 AudioContext
     if (webAiPlayingRef.current && audioContextRef.current) {
@@ -624,7 +639,7 @@ const App: React.FC = () => {
       setWebIsPaused(false);
       return;
     }
-    const trimmedText = webText.trim();
+    const trimmedText = effectiveWebText.trim();
     if (!trimmedText) {
       setWebError('請先貼上文字或抓取內容');
       return;
@@ -709,7 +724,7 @@ const App: React.FC = () => {
     }
 
     // 瀏覽器語音朗讀
-    const speakText = (webText || '').replace(/\r\n/g, '\n');
+    const speakText = (effectiveWebText || '').replace(/\r\n/g, '\n');
     // 回退用估算：字速保守一些，避免高亮一路跑在前面
     const charsPerSecond = 4.4;
     const estimatedSec = Math.max((speakText.length / charsPerSecond) / webRate, 1);
@@ -776,10 +791,10 @@ const App: React.FC = () => {
     if (isEditingText) return;
     if (webLoading) return;
     if (webIsSpeaking || webIsPaused) return;
-    if (!webText.trim()) return;
+    if (!effectiveWebText.trim()) return;
     pendingAutoPlayAfterFetchRef.current = false;
     void handleWebPlayPause();
-  }, [webText, webLoading, webIsSpeaking, webIsPaused, isEditingText]);
+  }, [effectiveWebText, webLoading, webIsSpeaking, webIsPaused, isEditingText]);
 
   // Web 朗讀進度：用於跟讀時當前行高亮
   useEffect(() => {
@@ -822,7 +837,7 @@ const App: React.FC = () => {
   };
 
   const webParagraphData = useMemo(() => {
-    const normalized = (webText || '').replace(/\r\n/g, '\n');
+    const normalized = (effectiveWebText || '').replace(/\r\n/g, '\n');
     const lines = normalized.split('\n');
     let cursor = 0;
     const paragraphs = lines.map((raw, idx) => {
@@ -837,12 +852,12 @@ const App: React.FC = () => {
       return { idx, text, isEmpty, start, end };
     });
     return { paragraphs, totalChars: cursor };
-  }, [webText]);
+  }, [effectiveWebText]);
 
   // 內容變更時清空 ref map，避免舊節點殘留
   useEffect(() => {
     paragraphElsRef.current.clear();
-  }, [webText]);
+  }, [effectiveWebText]);
 
   const getParagraphIdxClosestToCenter = () => {
     const el = mainRef.current;
@@ -1070,7 +1085,7 @@ const App: React.FC = () => {
               {(webTitle || novel?.title) && (
                 <header className="mb-6 text-center">
                  <h2 className="text-3xl md:text-5xl font-bold text-white serif-font tracking-tight">
-                    {webTitle || novel?.title || '小說'}
+                    {effectiveDisplayTitle}
                   </h2>
                   <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full mt-4" />
                 </header>
@@ -1321,6 +1336,15 @@ const App: React.FC = () => {
                     className="w-4 h-4 rounded border-white/20 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
                   />
                   <span className="text-sm text-slate-300">自動下一章（滾到底/朗讀結束）</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={convertToTraditionalEnabled}
+                    onChange={(e) => setConvertToTraditionalEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/20 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-300">簡體轉繁體（OpenCC）</span>
                 </label>
               </div>
 <div>
