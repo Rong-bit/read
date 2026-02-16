@@ -14,6 +14,56 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
   const [iframeError, setIframeError] = useState(false);
   const [viewMode, setViewMode] = useState<'iframe' | 'link' | 'text'>('iframe');
   const [showChapters, setShowChapters] = useState(false);
+
+  // 前端額外防護：避免正文中混入被輸出成文字的廣告/樣式/腳本片段
+  const cleanedTextLines = React.useMemo(() => {
+    const content = novel?.content || '';
+    if (!content) return [] as string[];
+    const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+    const isInjectedCodeLine = (line: string): boolean => {
+      const t = line.trim();
+      if (!t) return false;
+      const tl = t.toLowerCase();
+      if (/^loadadv\(\s*\d+\s*,\s*\d+\s*\)\s*;?$/i.test(t)) return true;
+      if (tl.includes('.bg-container-') || tl.includes('.bg-ssp-')) return true;
+      if (tl.includes('z-index: 2147483647')) return true;
+      const looksLikeCssRule =
+        (t.startsWith('.') || t.startsWith('#') || t.startsWith('@')) &&
+        t.includes('{') &&
+        t.includes('}') &&
+        (tl.includes('display') ||
+          tl.includes('flex') ||
+          tl.includes('z-index') ||
+          tl.includes('justify-content') ||
+          tl.includes('align-items') ||
+          tl.includes('margin-left') ||
+          tl.includes('margin-right'));
+      if (looksLikeCssRule) return true;
+      return false;
+    };
+
+    const out: string[] = [];
+    let prevNonEmpty = '';
+    let emptyStreak = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const isEmpty = trimmed.length === 0;
+      if (isEmpty) {
+        emptyStreak += 1;
+        if (emptyStreak <= 2) out.push('');
+        continue;
+      }
+      emptyStreak = 0;
+      if (isInjectedCodeLine(trimmed)) continue;
+      if (trimmed === prevNonEmpty) continue;
+      out.push(trimmed);
+      prevNonEmpty = trimmed;
+    }
+    while (out.length > 0 && out[0] === '') out.shift();
+    while (out.length > 0 && out[out.length - 1] === '') out.pop();
+    return out;
+  }, [novel?.content]);
   
   // Trigger animation whenever novel content changes
   useEffect(() => {
@@ -161,7 +211,7 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
             id="text-reader-container"
           >
             <div className="prose prose-invert max-w-none leading-relaxed">
-              {novel.content.split('\n').map((line, index) => {
+              {cleanedTextLines.map((line, index) => {
                 const isEmpty = line.trim().length === 0;
                 if (isEmpty) {
                   return <div key={index} className="h-4"></div>;
