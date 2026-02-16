@@ -1025,7 +1025,10 @@ const App: React.FC = () => {
                           <button
                             key={index}
                             type="button"
-                            onClick={() => handleWebFetch(chapter.url)}
+                            onClick={async () => {
+                              const ok = await handleWebFetch(chapter.url);
+                              if (ok) setShowWebChapters(false);
+                            }}
                             className={`px-4 py-2 rounded-lg text-sm text-left transition-all ${
                               isCurrentChapter
                                 ? 'bg-indigo-600 text-white font-bold'
