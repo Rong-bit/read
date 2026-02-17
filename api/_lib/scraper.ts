@@ -122,6 +122,9 @@ const cleanExtractedContent = (content: string, url: string): string => {
 
     if (looksLikeInjectedCodeLine(trimmed, urlLower)) continue;
 
+    // 站內公告／廣告文案（如 twword「應廣大讀者的要求, 現推出VIP會員免廣告功能」）
+    if (trimmed.includes('應廣大讀者的要求') || trimmed.includes('現推出VIP會員免廣告') || trimmed.includes('VIP會員免廣告功能')) continue;
+
     // 壓縮連續重複行（ttks.tw 會重複輸出同一段 CSS）
     if (trimmed === prevNonEmpty) continue;
 
@@ -950,13 +953,18 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
         .find('p')
         .map((_, el) => $(el).text().trim())
         .get()
-        .filter(text => text.length > 0 && !text.includes('溫馨提示'))
+.filter(text => {
+          if (text.length === 0) return false;
+          if (text.includes('溫馨提示')) return false;
+          if (text.includes('應廣大讀者的要求') || text.includes('現推出VIP會員免廣告') || text.includes('VIP會員免廣告功能')) return false;
+          return true;
+        })
         .join('\n\n');
       if (content.length > 100) {
         return { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl };
       }
     }
-    
+
     // 即使内容不够，也返回结果（包含下一章和上一章链接）
     if (nextChapterUrl || prevChapterUrl) {
       return { 
