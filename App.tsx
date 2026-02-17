@@ -147,6 +147,8 @@ const App: React.FC = () => {
   const pendingScrollToParagraphRef = useRef<number | null>(null);
   const lastFetchedUrlRef = useRef<string>('');
   const pendingAutoPlayAfterFetchRef = useRef(false);
+  /** TTS 觸發翻章後短暫禁止滾動觸發翻章，避免畫面多跳一章（聲音 N+1、畫面 N+2）*/
+  const lastTtsAutoNextAtRef = useRef<number>(0);
 
   // --- Initialization ---
   useEffect(() => {
@@ -536,6 +538,7 @@ const App: React.FC = () => {
     // 朗讀結束觸發翻章：下一章載入後要自動續播
     if (reason === 'tts') {
       pendingAutoPlayAfterFetchRef.current = true;
+      lastTtsAutoNextAtRef.current = Date.now();
     }
 
     autoNextInFlightRef.current = true;
@@ -557,6 +560,9 @@ const App: React.FC = () => {
   const checkScrollForAutoNext = () => {
     if (!autoNextEnabled) return;
     if (isEditingText) return;
+    // TTS 剛觸發翻章後短暫不讓滾動再觸發，避免畫面多跳一章（聲音下一章、畫面下下一章）
+    const ttsCooldownMs = 5000;
+    if (Date.now() - lastTtsAutoNextAtRef.current < ttsCooldownMs) return;
     const el = mainRef.current;
     if (!el) return;
     const threshold = 160;
