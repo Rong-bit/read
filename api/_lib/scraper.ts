@@ -178,6 +178,32 @@ const extractNextChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
       }
     }
   }
+
+  // 黃金屋 (hjwzw.com)：章節 URL 為 /Book/Read/<bookId>,<chapterId>，依數字推斷下一章
+  if (urlLower.includes('hjwzw.com')) {
+    const m = url.match(/\/Book\/Read\/(\d+),(\d+)/i);
+    if (m) {
+      const [, bookId, chapterId] = m;
+      const nextId = parseInt(chapterId, 10) + 1;
+      const inferred = `${baseUrl}/Book/Read/${bookId},${nextId}`;
+      const fromPage = $('a').toArray().find(a => {
+        const t = $(a).text().trim();
+        const href = $(a).attr('href');
+        return href && (t.includes('下一章') || t.includes('下一頁')) && !href.startsWith('#');
+      });
+      if (fromPage) {
+        const href = $(fromPage).attr('href');
+        if (href) {
+          try {
+            return resolveHref(href, baseUrl, url);
+          } catch {
+            return inferred;
+          }
+        }
+      }
+      return inferred;
+    }
+  }
   
   // 稷下書院 / twword.com - 从脚本变量中提取
   if (urlLower.includes('twword.com')) {
@@ -303,6 +329,33 @@ const extractPrevChapterUrl = ($: cheerio.CheerioAPI, url: string): string | und
       if (preUrlMatch?.[1]) {
         return resolveHref(preUrlMatch[1], baseUrl, url);
       }
+    }
+  }
+
+  // 黃金屋 (hjwzw.com)：章節 URL 為 /Book/Read/<bookId>,<chapterId>，依數字推斷上一章（第一章無上一章）
+  if (urlLower.includes('hjwzw.com')) {
+    const m = url.match(/\/Book\/Read\/(\d+),(\d+)/i);
+    if (m) {
+      const [, bookId, chapterId] = m;
+      const prevNum = parseInt(chapterId, 10) - 1;
+      if (prevNum < 1) return undefined;
+      const inferred = `${baseUrl}/Book/Read/${bookId},${prevNum}`;
+      const fromPage = $('a').toArray().find(a => {
+        const t = $(a).text().trim();
+        const href = $(a).attr('href');
+        return href && (t.includes('上一章') || t.includes('上一頁')) && !href.startsWith('#');
+      });
+      if (fromPage) {
+        const href = $(fromPage).attr('href');
+        if (href) {
+          try {
+            return resolveHref(href, baseUrl, url);
+          } catch {
+            return inferred;
+          }
+        }
+      }
+      return inferred;
     }
   }
   
@@ -473,7 +526,8 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
 
   // 縱橫中文網（zongheng.com）
   // 章節頁（read/book）：https://read.zongheng.com/chapter/<bookId>/<chapterId>.html
-  // 目錄頁：https://book.zongheng.com/showchapter/<bookId>.html
+  // 目錄頁（優先，較輕）：https://m.zongheng.com/chapter/list/<bookId>
+  // 目錄頁（備用，較大）：https://book.zongheng.com/showchapter/<bookId>.html
   if (urlLower.includes('zongheng.com')) {
     try {
       const bookIdMatch =
@@ -483,55 +537,175 @@ const extractChapters = async ($: cheerio.CheerioAPI, url: string): Promise<Chap
       const bookId = bookIdMatch?.[1];
       if (!bookId) return undefined;
 
+      const fetchTextWithTimeout = async (targetUrl: string, init: RequestInit, timeoutMs: number) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const resp = await fetch(targetUrl, { ...init, signal: controller.signal });
+          if (!resp.ok) return undefined;
+          return await resp.text();
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      const normalizeZonghengChapterTitle = (raw: string): string => {
+        const t = (raw || '').replace(/\s+/g, ' ').trim();
+        if (!t) return '';
+        // 手機目錄常是「第一卷 第1章 xxx」，保留從「第N章」開始
+        const idx = t.search(/第\s*\d+\s*章/);
+        if (idx >= 0) return t.slice(idx).trim();
+        return t;
+      };
+
+      const parseChaptersFromHtml = (html: string, selector: string, base: string, current: string) => {
+        const $toc = cheerio.load(html);
+        const links = $toc(selector).toArray();
+        const seen = new Set<string>();
+        const out: Array<ChapterItem & { _no?: number; _i: number }> = [];
+
+        let i = 0;
+        for (const a of links) {
+          const $a = $toc(a);
+          const href = ($a.attr('href') || '').trim();
+          if (!href) continue;
+
+          const fullUrl = resolveHref(href, base, current);
+          const m = fullUrl.match(/\/chapter\/(\d+)\/(\d+)(?:\.html)?/i);
+          if (!m) continue;
+          if (m[1] !== bookId) continue;
+
+          const canonicalUrl = `https://read.zongheng.com/chapter/${bookId}/${m[2]}.html`;
+          if (seen.has(canonicalUrl)) continue;
+          seen.add(canonicalUrl);
+
+          const title = normalizeZonghengChapterTitle($a.text() || '');
+          if (!title) continue;
+
+          const noMatch = title.match(/第\s*(\d+)\s*章/);
+          const no = noMatch?.[1] ? parseInt(noMatch[1], 10) : undefined;
+
+          out.push({ title, url: canonicalUrl, _no: Number.isFinite(no as any) ? no : undefined, _i: i++ });
+        }
+
+        // 優先用「第N章」排序（更穩），否則保留原順序
+        out.sort((a, b) => {
+          if (a._no != null && b._no != null) return a._no - b._no;
+          if (a._no != null) return -1;
+          if (b._no != null) return 1;
+          return a._i - b._i;
+        });
+
+        return out.map(({ title, url }) => ({ title, url }));
+      };
+
+      // 1) 優先抓手機目錄（體積更小、在 serverless 上更不容易超時）
+      const mobileCatalogUrl = `https://m.zongheng.com/chapter/list/${bookId}`;
+      const mobileHtml = await fetchTextWithTimeout(
+        mobileCatalogUrl,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Referer': 'https://m.zongheng.com/',
+          },
+        },
+        6500
+      );
+      if (mobileHtml) {
+        const chapters = parseChaptersFromHtml(
+          mobileHtml,
+          `a[href*="/chapter/${bookId}/"], a[href*="//m.zongheng.com/chapter/${bookId}/"]`,
+          'https://m.zongheng.com',
+          mobileCatalogUrl
+        );
+        if (chapters.length > 0) {
+          console.log(`✓ 縱橫目錄抓取成功（mobile），共 ${chapters.length} 章`);
+          return chapters;
+        }
+      }
+
+      // 2) 備用：桌面 showchapter（較大）
       const catalogUrl = `https://book.zongheng.com/showchapter/${bookId}.html`;
+      const html = await fetchTextWithTimeout(
+        catalogUrl,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Referer': 'https://book.zongheng.com/',
+          },
+        },
+        6500
+      );
+      if (html) {
+        const chapters = parseChaptersFromHtml(html, 'a[href*="/chapter/"]', 'https://book.zongheng.com', catalogUrl);
+        if (chapters.length > 0) {
+          console.log(`✓ 縱橫目錄抓取成功（showchapter），共 ${chapters.length} 章`);
+          return chapters;
+        }
+      }
+    } catch (error) {
+      console.log('縱橫目錄抓取失敗（不影響主流程）:', error);
+    }
+  }
+
+  // 黃金屋 (hjwzw.com)：章節頁 /Book/Read/<bookId>,<chapterId>，目錄頁 /Book/Chapter/<bookId>
+  if (urlLower.includes('hjwzw.com')) {
+    try {
+      const bookMatch = url.match(/\/Book\/Read\/(\d+),(\d+)/i) || url.match(/\/Book\/Chapter\/(\d+)/i);
+      const bookId = bookMatch?.[1];
+      if (!bookId) return undefined;
+
+      const catalogUrl = `${baseUrl}/Book/Chapter/${bookId}`;
       const resp = await fetch(catalogUrl, {
         headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-          'Referer': 'https://book.zongheng.com/',
+          'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+          'Referer': baseUrl + '/',
         },
       });
       if (!resp.ok) return undefined;
 
       const html = await resp.text();
       const $toc = cheerio.load(html);
-
-      // 目錄頁有多個區塊（分卷），但章節連結都落在 a[href*="/chapter/"]
-      const links = $toc('a[href*="/chapter/"]').toArray();
       const chapters: ChapterItem[] = [];
       const seen = new Set<string>();
 
+      // 目錄頁中的章節連結：/Book/Read/<bookId>,<chapterId>
+      const links = $toc('a[href*="/Book/Read/"], a[href*="Book/Read/"]').toArray();
       for (const a of links) {
         const $a = $toc(a);
         const href = ($a.attr('href') || '').trim();
         if (!href) continue;
 
-        const fullUrl = resolveHref(href, 'https://book.zongheng.com', catalogUrl);
-
-        // 僅保留「本書」章節頁：/chapter/<bookId>/<chapterId>.html
-        const m = fullUrl.match(/\/chapter\/(\d+)\/(\d+)\.html/i);
-        if (!m) continue;
-        if (m[1] !== bookId) continue;
+        const fullUrl = resolveHref(href, baseUrl, catalogUrl);
+        const m = fullUrl.match(/\/Book\/Read\/(\d+),(\d+)/i);
+        if (!m || m[1] !== bookId) continue;
+        if (seen.has(fullUrl)) continue;
+        seen.add(fullUrl);
 
         let title = ($a.text() || '').replace(/\s+/g, ' ').trim();
-        if (!title) continue;
-
-        // 轉成 read 域名（避免不同子域混用）
-        const canonicalUrl = `https://read.zongheng.com/chapter/${bookId}/${m[2]}.html`;
-        if (seen.has(canonicalUrl)) continue;
-        seen.add(canonicalUrl);
-
-        chapters.push({ title, url: canonicalUrl });
+        if (!title) title = `第 ${m[2]} 章`;
+        chapters.push({ title, url: fullUrl });
       }
 
       if (chapters.length > 0) {
-        console.log(`✓ 縱橫目錄抓取成功，共 ${chapters.length} 章`);
+        chapters.sort((a, b) => {
+          const idA = parseInt(a.url.match(/\/Book\/Read\/\d+,(\d+)/i)?.[1] || '0', 10);
+          const idB = parseInt(b.url.match(/\/Book\/Read\/\d+,(\d+)/i)?.[1] || '0', 10);
+          return idA - idB;
+        });
+        console.log(`✓ 黃金屋目錄抓取成功，共 ${chapters.length} 章`);
         return chapters;
       }
     } catch (error) {
-      console.log('縱橫目錄抓取失敗（不影響主流程）:', error);
+      console.log('黃金屋目錄抓取失敗（不影響主流程）:', error);
     }
   }
 
@@ -752,7 +926,8 @@ const extractContent = ($: cheerio.CheerioAPI, url: string): NovelResult | null 
         .join('\n\n');
       if (content.length > 100) {
         const nextChapterUrl = extractNextChapterUrl($, url);
-        return { title, content, sourceUrl: url, nextChapterUrl };
+        const prevChapterUrl = extractPrevChapterUrl($, url);
+        return { title, content, sourceUrl: url, nextChapterUrl, prevChapterUrl };
       }
     }
   }
