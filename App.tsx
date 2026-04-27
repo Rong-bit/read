@@ -61,6 +61,7 @@ const App: React.FC = () => {
   const [webList, setWebList] = useState<Array<{ id: string; title: string; text: string }>>([]);
   const [showShareHelp, setShowShareHelp] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
+  const isGithubPages = typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
 
   // --- Refs ---
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -371,15 +372,29 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      if (!res.ok) throw new Error('抓取失敗');
+      if (!res.ok) {
+        let message = '抓取失敗';
+        try {
+          const errData = await res.json();
+          if (typeof errData?.error === 'string' && errData.error.trim()) {
+            message = errData.error;
+          }
+        } catch {}
+        throw new Error(message);
+      }
       const data = await res.json();
       setWebTitle(data.title || '');
       setWebText(data.content || '');
       if (!data.content) {
         setWebError('無法取得內容，可改為直接貼上文字');
       }
-    } catch (err) {
-      setWebError('抓取失敗，請改為直接貼上文字');
+    } catch (err: any) {
+      const message = err?.message || '';
+      if (message) {
+        setWebError(message);
+      } else {
+        setWebError('抓取失敗，請改為直接貼上文字');
+      }
     } finally {
       setWebLoading(false);
     }
@@ -627,9 +642,11 @@ const App: React.FC = () => {
                     {webLoading ? '抓取中...' : '抓取內容'}
                   </button>
                 </div>
-                <div className="text-xs text-slate-500">
-                  GitHub Pages 為純前端，無法抓取網址；請改用貼文字朗讀。
-                </div>
+                {isGithubPages && (
+                  <div className="text-xs text-slate-500">
+                    GitHub Pages 為純前端，無法抓取網址；請改用貼文字朗讀。
+                  </div>
+                )}
                 {webError && (
                   <div className="text-xs text-orange-400">{webError}</div>
                 )}
