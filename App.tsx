@@ -1,7 +1,5 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import Header from './components/Header.tsx';
-import Sidebar from './components/Sidebar.tsx';
 import { NovelContent, ReaderState } from './types.ts';
 import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
@@ -31,6 +29,61 @@ function splitTextForTTS(text: string, maxCharsPerSegment: number = 1200): strin
   }
   return segments.length > 0 ? segments : [trimmed.slice(0, maxCharsPerSegment)];
 }
+
+type LocalHeaderProps = {
+  onToggleMenu: () => void;
+};
+
+const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu }) => (
+  <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
+    <h1 className="text-lg font-bold">Gemini 小說朗讀器</h1>
+    <button onClick={onToggleMenu} className="px-3 py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700/70">
+      選單
+    </button>
+  </header>
+);
+
+type LocalSidebarProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onOpenSettings: () => void;
+  onOpenBrowse: () => void;
+  onOpenLibrary: () => void;
+  onNewSearch: () => void;
+  onOpenUrlModal?: () => void;
+  currentNovelTitle?: string;
+  webRate?: number;
+  setWebRate?: (v: number) => void;
+  webVoice?: string;
+  setWebVoice?: (v: string) => void;
+  webVoices?: SpeechSynthesisVoice[];
+  useAiReading?: boolean;
+  setUseAiReading?: (v: boolean) => void;
+};
+
+const Sidebar: React.FC<LocalSidebarProps> = ({
+  isOpen,
+  onClose,
+  onOpenSettings,
+  onOpenBrowse,
+  onNewSearch,
+  onOpenUrlModal,
+  currentNovelTitle
+}) => (
+  <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900 border-l border-white/10 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+    <div className="p-4 border-b border-white/10 flex items-center justify-between">
+      <span className="font-bold">選單</span>
+      <button onClick={onClose}>關閉</button>
+    </div>
+    <div className="p-4 space-y-2">
+      {currentNovelTitle ? <div className="text-sm text-slate-300 truncate">{currentNovelTitle}</div> : null}
+      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onNewSearch(); onClose(); }}>新搜尋</button>
+      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
+      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
+      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
+    </div>
+  </div>
+);
 
 const App: React.FC = () => {
   const [novel, setNovel] = useState<NovelContent | null>(null);
