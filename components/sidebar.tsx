@@ -7,6 +7,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenBrowse: () => void;
   onOpenLibrary: () => void;
+  onOpenWebReader: () => void;
   onNewSearch: () => void;
   currentNovelTitle?: string;
 }
@@ -17,6 +18,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings, 
   onOpenBrowse, 
   onOpenLibrary,
+  onOpenWebReader,
   onNewSearch,
   currentNovelTitle 
 }) => {
@@ -70,6 +72,12 @@ const Sidebar: React.FC<SidebarProps> = ({
             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>}
             label="瀏覽熱門書源"
             onClick={() => { onOpenBrowse(); onClose(); }}
+          />
+
+          <MenuButton 
+            icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1 0-5.6"/><path d="M8 20a2 2 0 1 0 4 0"/></svg>}
+            label="抓取網頁朗讀"
+            onClick={() => { onOpenWebReader(); onClose(); }}
           />
 
           <div className="h-px bg-white/5 my-4" />
