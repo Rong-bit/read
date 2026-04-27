@@ -155,6 +155,7 @@ const App: React.FC = () => {
   const webTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const boundaryTickRef = useRef<number | null>(null);
   const ttsStartAtRef = useRef<number>(0);
+  const lastAutoScrollAtRef = useRef<number>(0);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
 
   const syncReadingPosition = (charIndex: number | null) => {
@@ -166,9 +167,18 @@ const App: React.FC = () => {
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
     const targetTop = Math.max(0, (lineNumber - 4) * lineHeight);
-    textarea.setSelectionRange(clamped, clamped);
     const absoluteTop = textarea.getBoundingClientRect().top + window.scrollY + targetTop;
-    window.scrollTo({ top: Math.max(0, absoluteTop - 120), behavior: 'smooth' });
+    const desiredY = Math.max(0, absoluteTop - 120);
+    const currentY = window.scrollY;
+    const distance = Math.abs(desiredY - currentY);
+    const now = Date.now();
+
+    // 僅在偏離明顯時才捲動，避免每次字元更新都造成畫面抖動。
+    if (distance < 140) return;
+    if (now - lastAutoScrollAtRef.current < 450) return;
+
+    lastAutoScrollAtRef.current = now;
+    window.scrollTo({ top: desiredY, behavior: 'auto' });
   };
 
   useEffect(() => {
