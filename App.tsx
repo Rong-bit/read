@@ -337,12 +337,14 @@ const App: React.FC = () => {
     }
   };
 
-  const handleWebFetch = async () => {
-    const url = normalizeUrl(webUrl);
+  const handleWebFetch = async (inputUrl?: string) => {
+    const rawUrl = inputUrl ?? webUrl;
+    const url = normalizeUrl(rawUrl);
     if (!url) {
       setWebError('請輸入正確的網址');
       return;
     }
+    setWebUrl(url);
     setWebError(null);
     setWebLoading(true);
     try {
@@ -477,6 +479,11 @@ const App: React.FC = () => {
         onOpenWebReader={() => {
           setReaderMode('web');
           window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onFetchWebFromMenu={(url) => {
+          setReaderMode('web');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          void handleWebFetch(url);
         }}
         onNewSearch={() => setShowSearch(true)}
         currentNovelTitle={novel?.title}
