@@ -30,6 +30,11 @@ jobs:
       
       - name: Install dependencies
         run: npm install --include=dev
+        env:
+          NPM_CONFIG_PRODUCTION: "false"
+      
+      - name: Verify Tailwind PostCSS plugin
+        run: npm ls @tailwindcss/postcss
       
       - name: Build
         run: npm run build
