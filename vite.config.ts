@@ -4,7 +4,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    const isGithubPages = env.GITHUB_PAGES === 'true';
     return {
+      base: isGithubPages ? '/read/' : '/',
       server: {
         port: 3000,
         host: '0.0.0.0',
