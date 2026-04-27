@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import Header from './components/Header.tsx';
-import Sidebar from './components/Sidebar.tsx';
+import Header from './components/Header';
+import Sidebar from './components/Sidebar';
 import { NovelContent, ReaderState } from './types.ts';
 import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
