@@ -30,6 +30,20 @@ function splitTextForTTS(text: string, maxCharsPerSegment: number = 1200): strin
   return segments.length > 0 ? segments : [trimmed.slice(0, maxCharsPerSegment)];
 }
 
+function splitTextForTTSWithRanges(text: string, maxCharsPerSegment: number = 1200): Array<{ text: string; start: number; end: number }> {
+  const segments = splitTextForTTS(text, maxCharsPerSegment);
+  const ranges: Array<{ text: string; start: number; end: number }> = [];
+  let searchFrom = 0;
+  for (const segment of segments) {
+    const idx = text.indexOf(segment, searchFrom);
+    const start = idx >= 0 ? idx : searchFrom;
+    const end = Math.min(text.length, start + segment.length);
+    ranges.push({ text: segment, start, end });
+    searchFrom = end;
+  }
+  return ranges;
+}
+
 type LocalHeaderProps = {
   onToggleMenu: () => void;
 };
@@ -138,6 +152,25 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const webAiPlayingRef = useRef(false);
+  const webTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
+
+  const syncReadingPosition = (charIndex: number | null) => {
+    const textarea = webTextareaRef.current;
+    if (!textarea || charIndex === null) return;
+    const clamped = Math.max(0, Math.min(charIndex, textarea.value.length));
+    const lineNumber = textarea.value.slice(0, clamped).split('\n').length;
+    const computed = window.getComputedStyle(textarea);
+    const parsedLineHeight = parseFloat(computed.lineHeight || '');
+    const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
+    const targetTop = Math.max(0, (lineNumber - 4) * lineHeight);
+    textarea.setSelectionRange(clamped, clamped);
+    textarea.scrollTo({ top: targetTop, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    syncReadingPosition(readingCharIndex);
+  }, [readingCharIndex, fontSize]);
 
   useEffect(() => {
     const savedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
@@ -200,7 +233,7 @@ const App: React.FC = () => {
     }
     if (useAiReading) {
       handleWebStop();
-      const segments = splitTextForTTS(text, 1200);
+      const segments = splitTextForTTSWithRanges(text, 1200);
       setWebAiLoading(true);
       const ctx = initAudioContext();
       if (ctx.state === 'suspended') await ctx.resume();
@@ -208,7 +241,9 @@ const App: React.FC = () => {
       const playNextSegment = async (index: number) => {
         if (!webAiPlayingRef.current || index >= segments.length) { handleWebStop(); return; }
         try {
-          const base64Audio = await generateSpeech(segments[index], 'Kore');
+          const currentSegment = segments[index];
+          setReadingCharIndex(currentSegment.start);
+          const base64Audio = await generateSpeech(currentSegment.text, 'Kore');
           const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
           const source = ctx.createBufferSource();
           source.buffer = audioBuffer;
@@ -225,8 +260,11 @@ const App: React.FC = () => {
       const utterance = new SpeechSynthesisUtterance(text);
       if (webVoice) { const selectedVoice = webVoices.find(v => v.name === webVoice); if (selectedVoice) utterance.voice = selectedVoice; }
       utterance.rate = webRate;
-      utterance.onstart = () => { setWebIsSpeaking(true); setWebIsPaused(false); };
-      utterance.onend = () => { setWebIsSpeaking(false); setWebIsPaused(false); };
+      utterance.onstart = () => { setWebIsSpeaking(true); setWebIsPaused(false); setReadingCharIndex(0); };
+      utterance.onboundary = (event: SpeechSynthesisEvent) => {
+        if (typeof event.charIndex === 'number') setReadingCharIndex(event.charIndex);
+      };
+      utterance.onend = () => { setWebIsSpeaking(false); setWebIsPaused(false); setReadingCharIndex(null); };
       utterance.onerror = () => handleWebStop();
       window.speechSynthesis.speak(utterance);
     }
@@ -236,6 +274,7 @@ const App: React.FC = () => {
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
     setWebIsSpeaking(false); setWebIsPaused(false); setWebAiLoading(false);
+    setReadingCharIndex(null);
   };
 
   const getThemeClass = () => {
@@ -303,6 +342,7 @@ const App: React.FC = () => {
             )}
             
             <textarea
+              ref={webTextareaRef}
               value={webText}
               onChange={(e) => setWebText(e.target.value)}
               placeholder="在此貼上小說內容，或從側邊欄使用「網址抓取」..."
