@@ -12,8 +12,59 @@ interface NovelDisplayProps {
 const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextChapter }) => {
   const [displayKey, setDisplayKey] = useState(0);
   const [iframeError, setIframeError] = useState(false);
-  const [viewMode, setViewMode] = useState<'iframe' | 'link'>('iframe');
+  const [viewMode, setViewMode] = useState<'iframe' | 'link' | 'text'>('iframe');
+  const [showChapters, setShowChapters] = useState(false);
 
+  // 前端額外防護：避免正文中混入被輸出成文字的廣告/樣式/腳本片段
+  const cleanedTextLines = React.useMemo(() => {
+    const content = novel?.content || '';
+    if (!content) return [] as string[];
+    const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+    const isInjectedCodeLine = (line: string): boolean => {
+      const t = line.trim();
+      if (!t) return false;
+      const tl = t.toLowerCase();
+      if (/^loadadv\(\s*\d+\s*,\s*\d+\s*\)\s*;?$/i.test(t)) return true;
+      if (tl.includes('.bg-container-') || tl.includes('.bg-ssp-')) return true;
+      if (tl.includes('z-index: 2147483647')) return true;
+      const looksLikeCssRule =
+        (t.startsWith('.') || t.startsWith('#') || t.startsWith('@')) &&
+        t.includes('{') &&
+        t.includes('}') &&
+        (tl.includes('display') ||
+          tl.includes('flex') ||
+          tl.includes('z-index') ||
+          tl.includes('justify-content') ||
+          tl.includes('align-items') ||
+          tl.includes('margin-left') ||
+          tl.includes('margin-right'));
+      if (looksLikeCssRule) return true;
+      return false;
+    };
+
+    const out: string[] = [];
+    let prevNonEmpty = '';
+    let emptyStreak = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const isEmpty = trimmed.length === 0;
+      if (isEmpty) {
+        emptyStreak += 1;
+        if (emptyStreak <= 2) out.push('');
+        continue;
+      }
+      emptyStreak = 0;
+      if (isInjectedCodeLine(trimmed)) continue;
+      if (trimmed === prevNonEmpty) continue;
+      out.push(trimmed);
+      prevNonEmpty = trimmed;
+    }
+    while (out.length > 0 && out[0] === '') out.shift();
+    while (out.length > 0 && out[out.length - 1] === '') out.pop();
+    return out;
+  }, [novel?.content]);
+  
   // Trigger animation whenever novel content changes
   useEffect(() => {
     if (novel) {
@@ -48,14 +99,64 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
       className="w-full max-w-6xl mx-auto mt-6 pb-40 animate-fade-in-up"
     >
       <header className="mb-8 text-center">
-        <h2 className="text-3xl md:text-5xl font-bold mb-4 bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
-          {novel.title || '小說閱讀'}
-        </h2>
+        <div className="flex items-center justify-center gap-4 mb-4">
+          <h2 className="text-3xl md:text-5xl font-bold bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
+            {novel.title || '小說閱讀'}
+          </h2>
+          {novel.chapters && novel.chapters.length > 0 && (
+            <button
+              onClick={() => setShowChapters(!showChapters)}
+              className="px-4 py-2 bg-slate-700/50 hover:bg-slate-700 text-white text-sm font-bold rounded-xl transition-all"
+              title="顯示/隱藏目錄"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"/>
+                <line x1="3" y1="6" x2="21" y2="6"/>
+                <line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
+            </button>
+          )}
+        </div>
         <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full"></div>
       </header>
 
+      {/* 章節目錄 */}
+      {showChapters && novel.chapters && novel.chapters.length > 0 && (
+        <div className="mb-8 bg-slate-900/60 border border-slate-700/50 rounded-2xl p-6 max-h-[600px] overflow-y-auto">
+          <h3 className="text-xl font-bold mb-4 text-slate-200">章節目錄 ({novel.chapters.length} 章)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {novel.chapters.map((chapter, index) => {
+              const isCurrentChapter = chapter.url === novel.sourceUrl;
+              return (
+                <a
+                  key={index}
+                  href={chapter.url}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (onNextChapter && typeof onNextChapter === 'function') {
+                      // 如果提供了 onNextChapter 回调，使用它
+                      window.location.href = chapter.url;
+                    } else {
+                      window.location.href = chapter.url;
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm transition-all ${
+                    isCurrentChapter
+                      ? 'bg-indigo-600 text-white font-bold'
+                      : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-white'
+                  }`}
+                  title={chapter.url}
+                >
+                  <div className="truncate">{chapter.title || `第 ${index + 1} 章`}</div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 視圖模式切換 */}
-      <div className="mb-6 flex justify-center gap-3">
+      <div className="mb-6 flex justify-center gap-3 flex-wrap">
         <button
           onClick={() => setViewMode('iframe')}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
@@ -71,6 +172,21 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
           </svg>
           內嵌閱讀
         </button>
+        {novel.content && novel.content.length > 0 && (
+          <button
+            onClick={() => setViewMode('text')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              viewMode === 'text'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-2">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+            </svg>
+          文本閱讀
+          </button>
+        )}
         <button
           onClick={() => setViewMode('link')}
           className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
@@ -87,10 +203,34 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
         </button>
       </div>
 
+      {/* 文本閱讀模式（無高亮/字體放大） */}
+      {viewMode === 'text' && novel.content && (
+        <div className="mb-8">
+          <div 
+            className="p-8 md:p-12 max-h-[800px] overflow-y-auto"
+            id="text-reader-container"
+          >
+            <div className="prose prose-invert max-w-none leading-relaxed">
+              {cleanedTextLines.map((line, index) => {
+                const isEmpty = line.trim().length === 0;
+                if (isEmpty) {
+                  return <div key={index} className="h-4"></div>;
+                }
+                return (
+                  <p key={index} className="mb-4 text-base md:text-lg text-slate-300">
+                    {line}
+                  </p>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Iframe 嵌入模式：僅在網址有效時嵌入，避免 Safari 顯示「網址無效」 */}
       {viewMode === 'iframe' && !iframeError && hasValidUrl && (
         <div className="mb-8">
-          <div className="relative w-full h-[600px] md:h-[800px] rounded-2xl overflow-hidden border border-slate-700/50 bg-slate-900/50 shadow-2xl">
+          <div className="relative w-full h-[600px] md:h-[800px] overflow-hidden">
             <iframe
               src={safeUrl!}
               className="w-full h-full"
@@ -161,6 +301,57 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
             <div className="mt-6 p-4 bg-slate-800/30 rounded-xl">
               <p className="text-xs text-slate-500 font-mono break-all">{novel.sourceUrl}</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 上一章和下一章按鈕 */}
+      {(novel.prevChapterUrl || novel.nextChapterUrl) ? (
+        <div className="mt-8 mb-8 text-center">
+          <div className="flex flex-wrap gap-4 justify-center">
+            {novel.prevChapterUrl && (
+              <button
+                onClick={() => {
+                  if (novel.prevChapterUrl) {
+                    console.log('點擊上一章，跳轉到:', novel.prevChapterUrl);
+                    window.location.href = novel.prevChapterUrl;
+                  }
+                }}
+                className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white font-bold rounded-xl shadow-lg shadow-slate-600/30 transition-all hover:scale-105 active:scale-95"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                <span>上一章</span>
+              </button>
+            )}
+            {novel.nextChapterUrl && (
+              <button
+                onClick={onNextChapter || (() => {
+                  if (novel.nextChapterUrl) {
+                    console.log('點擊下一章，跳轉到:', novel.nextChapterUrl);
+                    window.location.href = novel.nextChapterUrl;
+                  }
+                })}
+                className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 active:scale-95"
+              >
+                <span>下一章</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+            )}
+          </div>
+          {/* 調試信息 */}
+          <div className="mt-2 text-xs text-slate-500">
+            {novel.prevChapterUrl && <div>上一章URL: {novel.prevChapterUrl}</div>}
+            {novel.nextChapterUrl && <div>下一章URL: {novel.nextChapterUrl}</div>}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-8 mb-8 text-center">
+          <div className="text-xs text-slate-500">
+            未找到章節鏈接（調試信息：prevChapterUrl = {String(novel.prevChapterUrl)}, nextChapterUrl = {String(novel.nextChapterUrl)}）
           </div>
         </div>
       )}
