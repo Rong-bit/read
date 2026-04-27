@@ -1,5 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import Header from './components/Header.tsx';
+import Sidebar from './components/Sidebar.tsx';
 import { NovelContent, ReaderState } from './types.ts';
 import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
@@ -29,96 +31,6 @@ function splitTextForTTS(text: string, maxCharsPerSegment: number = 1200): strin
   }
   return segments.length > 0 ? segments : [trimmed.slice(0, maxCharsPerSegment)];
 }
-
-interface HeaderProps {
-  onToggleMenu: () => void;
-}
-
-const Header: React.FC<HeaderProps> = ({ onToggleMenu }) => (
-  <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
-    <div className="flex items-center gap-3 cursor-pointer group" onClick={() => window.location.reload()}>
-      <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-        </svg>
-      </div>
-      <div className="hidden sm:block">
-        <h1 className="text-lg font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Gemini 小說朗讀器</h1>
-        <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">AI 智慧閱讀助手</p>
-      </div>
-    </div>
-    <button onClick={onToggleMenu} className="w-10 h-10 flex flex-col items-center justify-center gap-1.5 bg-slate-800/50 hover:bg-slate-800 rounded-xl transition-all group">
-      <div className="w-5 h-0.5 bg-slate-300 group-hover:bg-indigo-400 group-hover:w-6 transition-all"></div>
-      <div className="w-5 h-0.5 bg-slate-300 group-hover:bg-indigo-400 transition-all"></div>
-      <div className="w-5 h-0.5 bg-slate-300 group-hover:bg-indigo-400 group-hover:w-4 transition-all"></div>
-    </button>
-  </header>
-);
-
-interface SidebarProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onOpenSettings: () => void;
-  onOpenBrowse: () => void;
-  onOpenLibrary: () => void;
-  onNewSearch: () => void;
-  onOpenUrlModal?: () => void;
-  currentNovelTitle?: string;
-  webRate?: number;
-  setWebRate?: (v: number) => void;
-  webVoice?: string;
-  setWebVoice?: (v: string) => void;
-  webVoices?: SpeechSynthesisVoice[];
-  useAiReading?: boolean;
-  setUseAiReading?: (v: boolean) => void;
-}
-
-const Sidebar: React.FC<SidebarProps> = ({
-  isOpen,
-  onClose,
-  onOpenSettings,
-  onOpenBrowse,
-  onOpenUrlModal,
-  currentNovelTitle,
-  webRate = 0.8,
-  setWebRate,
-  webVoice = '',
-  setWebVoice,
-  webVoices = [],
-  useAiReading = false,
-  setUseAiReading
-}) => (
-  <>
-    <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={onClose} />
-    <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900 border-l border-white/10 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-      <div className="p-6 flex items-center justify-between border-b border-white/5">
-        <h2 className="text-xl font-bold text-white">選單</h2>
-        <button onClick={onClose} className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-full transition-all">✕</button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {currentNovelTitle && <p className="text-sm text-slate-300 truncate">{currentNovelTitle}</p>}
-        <button className="w-full p-3 rounded-xl bg-white/5 text-left" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
-        <button className="w-full p-3 rounded-xl bg-white/5 text-left" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽熱門書源</button>
-        <button className="w-full p-3 rounded-xl bg-white/5 text-left" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好設定</button>
-        {setWebRate && (
-          <input type="range" min="0.5" max="2.0" step="0.1" value={webRate} onChange={(e) => setWebRate(parseFloat(e.target.value))} className="w-full" />
-        )}
-        {setWebVoice && (
-          <select value={webVoice} onChange={(e) => setWebVoice(e.target.value)} className="w-full bg-slate-800 rounded-xl px-3 py-2">
-            {webVoices.length === 0 && <option value="">預設</option>}
-            {webVoices.map(v => <option key={v.name} value={v.name}>{v.name}</option>)}
-          </select>
-        )}
-        {setUseAiReading && (
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input type="checkbox" checked={useAiReading} onChange={(e) => setUseAiReading(e.target.checked)} />
-            使用 AI 朗讀
-          </label>
-        )}
-      </div>
-    </div>
-  </>
-);
 
 const App: React.FC = () => {
   const [novel, setNovel] = useState<NovelContent | null>(null);
