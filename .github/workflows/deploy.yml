@@ -1,1 +1,73 @@
+name: Deploy to GitHub Pages
 
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Clean install dependencies (include optional native bindings)
+        run: |
+          rm -rf node_modules
+          npm install --include=dev --include=optional
+        env:
+          NPM_CONFIG_PRODUCTION: "false"
+          NPM_CONFIG_OPTIONAL: "true"
+      
+      - name: Ensure Tailwind PostCSS plugin is installed
+        run: npm install @tailwindcss/postcss --no-save --include=dev --include=optional
+      
+      - name: Ensure Tailwind Oxide Linux binary is installed
+        run: npm install @tailwindcss/oxide-linux-x64-gnu --no-save --include=optional
+      
+      - name: Verify Tailwind PostCSS plugin
+        run: npm ls @tailwindcss/postcss
+      
+      - name: Verify Tailwind Oxide binary
+        run: npm ls @tailwindcss/oxide-linux-x64-gnu
+      
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: production
+          GITHUB_PAGES: 'true'
+          TAILWIND_DISABLE_OXIDE: "1"
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
