@@ -6,11 +6,12 @@ const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const getFetchNovelApiUrl = (): string | null => {
   const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  const fallbackGithubApiBase = 'https://read-kappa-two.vercel.app';
   // 未設定時保持本地開發行為：走同源 /api/fetch-novel
   if (!baseUrl) {
     // GitHub Pages 是靜態託管，沒有後端 /api 可用
     if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
-      return null;
+      return `${fallbackGithubApiBase}/api/fetch-novel`;
     }
     return '/api/fetch-novel';
   }
