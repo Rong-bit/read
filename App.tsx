@@ -232,8 +232,11 @@ const App: React.FC = () => {
   };
 
   const handleWebPlayPause = async () => {
-    const text = webText.trim();
-    if (!text) return;
+    const fullText = webText;
+    if (!fullText.trim()) return;
+    const firstContentIndex = fullText.search(/\S/);
+    const offset = firstContentIndex >= 0 ? firstContentIndex : 0;
+    const text = fullText.slice(offset);
     if (webAiPlayingRef.current && audioContextRef.current) {
       if (!webIsPaused) { await audioContextRef.current.suspend(); setWebIsPaused(true); }
       else { await audioContextRef.current.resume(); setWebIsPaused(false); }
@@ -255,7 +258,7 @@ const App: React.FC = () => {
         if (!webAiPlayingRef.current || index >= segments.length) { handleWebStop(); return; }
         try {
           const currentSegment = segments[index];
-          setReadingCharIndex(currentSegment.start);
+          setReadingCharIndex(offset + currentSegment.start);
           const base64Audio = await generateSpeech(currentSegment.text, 'Kore');
           const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
           const source = ctx.createBufferSource();
@@ -276,7 +279,7 @@ const App: React.FC = () => {
       utterance.onstart = () => {
         setWebIsSpeaking(true);
         setWebIsPaused(false);
-        setReadingCharIndex(0);
+        setReadingCharIndex(offset);
         ttsStartAtRef.current = Date.now();
         if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
         // 部分瀏覽器/語音不會穩定觸發 onboundary，使用時間估算做備援同步。
@@ -286,14 +289,14 @@ const App: React.FC = () => {
           const charsPerSec = Math.max(4, 8 * webRate);
           const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
           setReadingCharIndex((prev) => {
-            const next = Math.min(text.length, estimatedIndex);
+            const next = Math.min(fullText.length, offset + estimatedIndex);
             if (prev === null) return next;
             return Math.max(prev, next);
           });
         }, 180);
       };
       utterance.onboundary = (event: SpeechSynthesisEvent) => {
-        if (typeof event.charIndex === 'number') setReadingCharIndex(event.charIndex);
+        if (typeof event.charIndex === 'number') setReadingCharIndex(offset + event.charIndex);
       };
       utterance.onend = () => {
         if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
