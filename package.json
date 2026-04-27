@@ -11,7 +11,6 @@
     "dev:server": "cd server && npm run dev",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
-    "build:github-pages": "vite build --base /read-app/",
     "preview": "vite preview",
     "install:all": "npm install && cd server && npm install"
   },

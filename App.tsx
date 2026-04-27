@@ -42,7 +42,6 @@ const App: React.FC = () => {
   const [fontSize, setFontSize] = useState(18);
   const [theme, setTheme] = useState<'dark' | 'sepia' | 'slate'>('dark');
   const [showResumeToast, setShowResumeToast] = useState(false);
-  const [resumeToastKind, setResumeToastKind] = useState<'restore' | 'saved'>('restore');
   const [readerMode, setReaderMode] = useState<'novel' | 'web'>('novel');
 
   const [webUrl, setWebUrl] = useState('');
@@ -67,16 +66,6 @@ const App: React.FC = () => {
   const requestRef = useRef<number>(0);
   const lastSavedTimeRef = useRef<number>(0);
   const webUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const readingScrollRef = useRef<HTMLDivElement | null>(null);
-
-  /** 與截圖一致：已載入小說且隱藏搜尋列時，使用米色閱讀殼 + 六鍵浮動列 */
-  const isReadingShell = Boolean(novel && !showSearch && readerMode === 'novel');
-
-  const scrollReadingArea = (direction: -1 | 1) => {
-    const el = readingScrollRef.current;
-    if (!el) return;
-    el.scrollBy({ top: direction * Math.min(280, Math.floor(el.clientHeight * 0.85)), behavior: 'smooth' });
-  };
 
   // --- Initialization ---
   useEffect(() => {
@@ -114,7 +103,6 @@ const App: React.FC = () => {
         setNovel(p.novel);
         setCurrentTime(p.currentTime || 0);
         setShowSearch(false); // 如果有紀錄，預設進入閱讀模式
-        setResumeToastKind('restore');
         setShowResumeToast(true);
         setTimeout(() => setShowResumeToast(false), 3000);
       }
@@ -477,12 +465,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div
-      className={`min-h-screen flex flex-col transition-colors duration-500 ${
-        isReadingShell ? 'bg-[#f5eedc] pb-36' : `${getThemeClass()} pb-40`
-      }`}
-    >
-      <Header onToggleMenu={() => setIsMenuOpen(true)} readerMinimal={isReadingShell} />
+    <div className={`min-h-screen pb-40 flex flex-col transition-colors duration-500 ${getThemeClass()}`}>
+      <Header onToggleMenu={() => setIsMenuOpen(true)} />
       
       <Sidebar 
         isOpen={isMenuOpen}
@@ -497,36 +481,11 @@ const App: React.FC = () => {
       {showResumeToast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-indigo-600 text-white px-5 py-2.5 rounded-full shadow-2xl animate-fade-in-up text-sm font-bold flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          {resumeToastKind === 'saved' ? '已儲存目前進度' : '已自動恢復上次閱讀進度'}
+          已自動恢復上次閱讀進度
         </div>
       )}
 
-      <main
-        ref={isReadingShell ? readingScrollRef : undefined}
-        className={
-          isReadingShell
-            ? 'flex-1 flex flex-col min-h-0 overflow-y-auto'
-            : 'flex-1 container mx-auto px-4 md:px-6'
-        }
-      >
-        {isReadingShell ? (
-          <div className="flex flex-col flex-1 min-h-0 max-w-4xl mx-auto w-full px-4 pt-3 pb-4">
-            <div className="text-sm font-semibold text-[#6b5d4f] tracking-wide mb-2">閱讀模式</div>
-            {error && (
-              <div className="mb-3 p-3 bg-red-100 border border-red-200 rounded-xl text-red-800 text-xs text-center">
-                {error}
-              </div>
-            )}
-            <div className="flex-1 min-h-0 flex flex-col" style={{ fontSize: `${fontSize}px` }}>
-              <NovelDisplay
-                novel={novel}
-                isLoading={state === ReaderState.FETCHING}
-                onNextChapter={handleNextChapter}
-                compact
-              />
-            </div>
-          </div>
-        ) : (
+      <main className="flex-1 container mx-auto px-4 md:px-6">
         <div className="max-w-4xl mx-auto pt-6 md:pt-10">
           <div className="flex justify-center mb-8">
             <div className="inline-flex bg-white/5 rounded-full p-1 border border-white/10">
@@ -747,77 +706,10 @@ const App: React.FC = () => {
             </div>
           )}
         </div>
-        )}
       </main>
 
-      {/* 截圖式：閱讀殼底部六鍵浮動列 */}
-      {isReadingShell && (
-        <div className="fixed bottom-5 left-1/2 z-[100] flex -translate-x-1/2 items-center gap-2 rounded-full border border-slate-600/40 bg-[#232831] px-3 py-2.5 shadow-2xl">
-          <button
-            type="button"
-            onClick={() => scrollReadingArea(-1)}
-            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-white/5 bg-[#2c3140] text-white/90 transition-colors hover:bg-[#353a4a]"
-            title="向上捲動"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
-          <button
-            type="button"
-            onClick={handlePlayPause}
-            disabled={state === ReaderState.READING}
-            className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition-colors hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={state === ReaderState.READING ? '正在產生語音…' : state === ReaderState.PLAYING ? '暫停' : '播放'}
-          >
-            {state === ReaderState.READING ? (
-              <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-6.22-8.6" strokeLinecap="round"/></svg>
-            ) : state === ReaderState.PLAYING ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5"><path d="M8 5v14l11-7z"/></svg>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={handleStop}
-            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-white/5 bg-[#2c3140] text-white/90 transition-colors hover:bg-[#353a4a]"
-            title="停止"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              saveReadingProgress(currentTime);
-              setResumeToastKind('saved');
-              setShowResumeToast(true);
-              setTimeout(() => setShowResumeToast(false), 2000);
-            }}
-            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-white/5 bg-[#2c3140] text-white/90 transition-colors hover:bg-[#353a4a]"
-            title="記錄目前進度"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsMenuOpen(true)}
-            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-white/5 bg-[#2c3140] text-white/90 transition-colors hover:bg-[#353a4a]"
-            title="選單"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollReadingArea(1)}
-            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-white/5 bg-[#2c3140] text-white/90 transition-colors hover:bg-[#353a4a]"
-            title="向下捲動"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-          </button>
-        </div>
-      )}
-
-      {/* 一般模式：底部播放列 */}
-      {!isReadingShell && readerMode === 'novel' && (
+      {/* 固定底部播放列 */}
+      {readerMode === 'novel' && (
         <div className="fixed bottom-0 left-0 right-0 z-[100] flex items-center justify-center gap-4 px-4 py-4 bg-slate-900/95 border-t border-white/10 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.4)]">
           <span className="text-slate-400 text-sm font-medium truncate max-w-[120px] md:max-w-[200px]" title={novel?.title}>{novel?.title || '未選書'}</span>
           <button
@@ -884,7 +776,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {!isReadingShell && theme === 'dark' && (<><div className="fixed -top-24 -left-24 w-96 h-96 bg-indigo-600/10 rounded-full blur-[100px] pointer-events-none -z-10"></div><div className="fixed bottom-0 right-0 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[120px] pointer-events-none -z-10"></div></>)}
+      {theme === 'dark' && (<><div className="fixed -top-24 -left-24 w-96 h-96 bg-indigo-600/10 rounded-full blur-[100px] pointer-events-none -z-10"></div><div className="fixed bottom-0 right-0 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[120px] pointer-events-none -z-10"></div></>)}
     </div>
   );
 };

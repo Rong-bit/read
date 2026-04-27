@@ -7,11 +7,9 @@ interface NovelDisplayProps {
   novel: NovelContent | null;
   isLoading: boolean;
   onNextChapter?: () => void;
-  /** 截圖式閱讀模式：隱藏大標題與版權區，內嵌區佔滿 */
-  compact?: boolean;
 }
 
-const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextChapter, compact }) => {
+const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextChapter }) => {
   const [displayKey, setDisplayKey] = useState(0);
   const [iframeError, setIframeError] = useState(false);
   const [viewMode, setViewMode] = useState<'iframe' | 'link'>('iframe');
@@ -27,11 +25,9 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
 
   if (isLoading) {
     return (
-      <div
-        className={`w-full animate-pulse space-y-4 ${compact ? 'max-w-none mx-0 mt-0 flex-1 flex flex-col' : 'max-w-6xl mx-auto mt-6 space-y-8'}`}
-      >
-        <div className={`h-10 rounded-xl w-2/3 ${compact ? 'bg-[#e5dcc8]' : 'bg-slate-800/50 mx-auto'}`} />
-        <div className={`rounded-2xl flex-1 min-h-[45vh] ${compact ? 'bg-[#ebe3d4]' : 'h-96 bg-slate-800/40'}`} />
+      <div className="w-full max-w-6xl mx-auto mt-6 animate-pulse space-y-8">
+        <div className="h-10 bg-slate-800/50 rounded-xl w-2/3 mx-auto"></div>
+        <div className="h-96 bg-slate-800/40 rounded-2xl"></div>
       </div>
     );
   }
@@ -46,72 +42,55 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
     setViewMode('link');
   };
 
-  const iframeShell = compact
-    ? 'relative w-full flex-1 min-h-[48dvh] max-h-[calc(100dvh-11rem)] rounded-xl overflow-hidden border border-[#ddd4c4] bg-white shadow-sm'
-    : 'relative w-full h-[600px] md:h-[800px] rounded-2xl overflow-hidden border border-slate-700/50 bg-slate-900/50 shadow-2xl';
-
   return (
     <div 
       key={displayKey}
-      className={
-        compact
-          ? 'w-full flex-1 min-h-0 flex flex-col animate-fade-in-up'
-          : 'w-full max-w-6xl mx-auto mt-6 pb-40 animate-fade-in-up'
-      }
+      className="w-full max-w-6xl mx-auto mt-6 pb-40 animate-fade-in-up"
     >
-      {!compact && (
-        <>
-          <header className="mb-8 text-center">
-            <h2 className="text-3xl md:text-5xl font-bold mb-4 bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
-              {novel.title || '小說閱讀'}
-            </h2>
-            <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full"></div>
-          </header>
-
-          <div className="mb-6 flex justify-center gap-3">
-            <button
-              onClick={() => setViewMode('iframe')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                viewMode === 'iframe'
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                  : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
-              }`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-2">
-                <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-                <path d="M3 9h18"/>
-                <path d="M9 21V9"/>
-              </svg>
-              內嵌閱讀
-            </button>
-            <button
-              onClick={() => setViewMode('link')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                viewMode === 'link'
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                  : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
-              }`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-2">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-              </svg>
-              直接跳轉
-            </button>
-          </div>
-        </>
-      )}
-
-      {compact && (
-        <p className="text-xs text-[#8a7a66] mb-2 truncate px-0.5" title={novel.title || undefined}>
+      <header className="mb-8 text-center">
+        <h2 className="text-3xl md:text-5xl font-bold mb-4 bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent serif-font tracking-tight">
           {novel.title || '小說閱讀'}
-        </p>
-      )}
+        </h2>
+        <div className="w-16 h-1 bg-indigo-500/30 mx-auto rounded-full"></div>
+      </header>
+
+      {/* 視圖模式切換 */}
+      <div className="mb-6 flex justify-center gap-3">
+        <button
+          onClick={() => setViewMode('iframe')}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+            viewMode === 'iframe'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+              : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-2">
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+            <path d="M3 9h18"/>
+            <path d="M9 21V9"/>
+          </svg>
+          內嵌閱讀
+        </button>
+        <button
+          onClick={() => setViewMode('link')}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+            viewMode === 'link'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+              : 'bg-slate-800/50 text-slate-400 hover:bg-slate-800/70'
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="inline mr-2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          直接跳轉
+        </button>
+      </div>
 
       {/* Iframe 嵌入模式：僅在網址有效時嵌入，避免 Safari 顯示「網址無效」 */}
       {viewMode === 'iframe' && !iframeError && hasValidUrl && (
-        <div className={compact ? 'mb-2 flex-1 min-h-0 flex flex-col' : 'mb-8'}>
-          <div className={iframeShell}>
+        <div className="mb-8">
+          <div className="relative w-full h-[600px] md:h-[800px] rounded-2xl overflow-hidden border border-slate-700/50 bg-slate-900/50 shadow-2xl">
             <iframe
               src={safeUrl!}
               className="w-full h-full"
@@ -134,20 +113,13 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
               </div>
             )}
           </div>
-          {!compact && (
-            <p className="mt-4 text-center text-xs text-slate-500">
-              提示：如果無法顯示內容，請點擊上方「直接跳轉」按鈕
-            </p>
-          )}
-          {compact && (
-            <p className="mt-2 text-center text-[10px] text-[#9a8b78]">
-              無法內嵌時請從右上角選單 → 搜尋新小說，或改用電腦版切換「直接跳轉」
-            </p>
-          )}
+          <p className="mt-4 text-center text-xs text-slate-500">
+            提示：如果無法顯示內容，請點擊上方「直接跳轉」按鈕
+          </p>
         </div>
       )}
       {viewMode === 'iframe' && !iframeError && !hasValidUrl && (
-        <div className={`${compact ? 'mb-2 p-4' : 'mb-8 p-8'} bg-amber-900/20 border border-amber-500/30 rounded-2xl text-center`}>
+        <div className="mb-8 p-8 bg-amber-900/20 border border-amber-500/30 rounded-2xl text-center">
           <p className="text-amber-400 mb-4">網址無效，無法內嵌。請使用「直接跳轉」或重新輸入正確網址。</p>
           <button
             onClick={() => setViewMode('link')}
@@ -160,8 +132,8 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
 
       {/* 直接跳轉模式 */}
       {viewMode === 'link' && (
-        <div className={compact ? 'mb-2 flex-1' : 'mb-8'}>
-          <div className={`${compact ? 'p-6' : 'p-12'} bg-slate-900/40 rounded-2xl border border-slate-800/50 backdrop-blur-sm text-center`}>
+        <div className="mb-8">
+          <div className="p-12 bg-slate-900/40 rounded-2xl border border-slate-800/50 backdrop-blur-sm text-center">
             <div className="mb-8">
               <div className="w-20 h-20 mx-auto mb-6 bg-indigo-600/20 rounded-full flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400">
@@ -194,7 +166,6 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
       )}
 
       {/* 版權聲明 */}
-      {!compact && (
       <footer className="mt-12 p-6 bg-slate-900/40 rounded-2xl border border-slate-800/50 backdrop-blur-sm">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-1.5 h-6 bg-indigo-500 rounded-full"></div>
@@ -210,7 +181,6 @@ const NovelDisplay: React.FC<NovelDisplayProps> = ({ novel, isLoading, onNextCha
           </p>
         </div>
       </footer>
-      )}
     </div>
   );
 };
