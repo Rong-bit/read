@@ -173,13 +173,15 @@ const App: React.FC = () => {
     const safeTop = viewportHeight * 0.35;
     const safeBottom = viewportHeight * 0.65;
     const now = Date.now();
+    const minStepPx = Math.max(lineHeight * 1.5, 48); // 至少跨 1.5 行才捲動
+    const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
 
     // 朗讀行仍在中央安全區就不捲動，避免視覺抖動。
     if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
-    if (now - lastAutoScrollAtRef.current < 500) return;
+    if (now - lastAutoScrollAtRef.current < throttleMs) return;
     const desiredTop = Math.max(0, targetTop - viewportHeight * 0.5);
     const nextTop = Math.max(currentTop, desiredTop);
-    if (Math.abs(nextTop - currentTop) < 80) return;
+    if (Math.abs(nextTop - currentTop) < minStepPx) return;
 
     lastAutoScrollAtRef.current = now;
     textarea.scrollTo({ top: nextTop, behavior: 'auto' });
