@@ -43,6 +43,27 @@ const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu }) => (
   </header>
 );
 
+const deriveFallbackTitle = (input: string, content: string): string => {
+  const firstNonEmptyLine = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstNonEmptyLine) return firstNonEmptyLine.slice(0, 40);
+
+  try {
+    const u = new URL(input);
+    const raw = u.pathname.split('/').filter(Boolean).pop() || u.hostname;
+    const decoded = decodeURIComponent(raw).replace(/\.(html?|php)$/i, '');
+    if (decoded.trim()) return decoded.trim().slice(0, 40);
+  } catch {
+    // input may be a keyword, not a URL
+  }
+
+  const cleaned = input.trim();
+  if (cleaned) return cleaned.slice(0, 40);
+  return '未命名章節';
+};
+
 type LocalSidebarProps = {
   isOpen: boolean;
   onClose: () => void;
@@ -151,8 +172,9 @@ const App: React.FC = () => {
       setWebLoading(true);
       setWebError(null);
       const data = await fetchNovelContent(input);
-      setNovel(data);
-      setWebTitle(data.title);
+      const resolvedTitle = data.title?.trim() || deriveFallbackTitle(input, data.content || '');
+      setNovel({ ...data, title: resolvedTitle });
+      setWebTitle(resolvedTitle);
       setWebText(data.content);
       setShowSearch(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
