@@ -1,13 +1,14 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { NovelContent } from "../types.ts";
 
-const getDefaultApiKey = () =>
-  import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || "";
+// Fix: Always use process.env.API_KEY as per guidelines and removed fallback to import.meta.env
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const getAI = (overrideApiKey?: string) => {
-  const apiKey = (overrideApiKey && overrideApiKey.trim()) || getDefaultApiKey();
-  return new GoogleGenAI({ apiKey });
+const getFetchNovelApiUrl = (): string => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  // 未設定時保持本地開發行為：走同源 /api/fetch-novel
+  if (!baseUrl) return '/api/fetch-novel';
+  return `${baseUrl.replace(/\/+$/, '')}/api/fetch-novel`;
 };
 
 // 驗證 URL 並嘗試從後端取得正文（若後端可用）
@@ -27,8 +28,9 @@ export const fetchNovelContent = async (input: string, currentTitle?: string): P
     // 嘗試呼叫後端抓取正文（本機 npm run dev:all 時有效）
     console.log('開始抓取小說，URL:', url);
     try {
-      console.log('發送請求到 /api/fetch-novel');
-      const res = await fetch('/api/fetch-novel', {
+      const apiUrl = getFetchNovelApiUrl();
+      console.log('發送請求到', apiUrl);
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, currentTitle: title })
@@ -110,12 +112,12 @@ const extractTitleFromUrl = (url: string): string => {
   }
 };
 
+// Fix: Removed manual apiKey parameter as process.env.API_KEY must be used exclusively
 export const generateSpeech = async (
   text: string,
-  voiceName: string = 'Kore',
-  apiKey?: string
+  voiceName: string = 'Kore'
 ): Promise<string> => {
-  const ai = getAI(apiKey);
+  const ai = getAI();
   
   // 長篇朗讀優化
   const response = await ai.models.generateContent({
