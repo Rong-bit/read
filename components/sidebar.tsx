@@ -9,6 +9,15 @@ interface SidebarProps {
   onOpenLibrary: () => void;
   onOpenWebReader: () => void;
   onFetchWebFromMenu: (url: string) => void;
+  webRate: number;
+  onWebRateChange: (rate: number) => void;
+  webVoice: string;
+  webVoices: SpeechSynthesisVoice[];
+  onWebVoiceChange: (voice: string) => void;
+  webUseAiNarration: boolean;
+  onWebUseAiNarrationChange: (value: boolean) => void;
+  webApiKey: string;
+  onWebApiKeyChange: (value: string) => void;
   onNewSearch: () => void;
   currentNovelTitle?: string;
 }
@@ -21,6 +30,15 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenLibrary,
   onOpenWebReader,
   onFetchWebFromMenu,
+  webRate,
+  onWebRateChange,
+  webVoice,
+  webVoices,
+  onWebVoiceChange,
+  webUseAiNarration,
+  onWebUseAiNarrationChange,
+  webApiKey,
+  onWebApiKeyChange,
   onNewSearch,
   currentNovelTitle 
 }) => {
@@ -78,18 +96,23 @@ const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => { onOpenBrowse(); onClose(); }}
           />
 
-          <MenuButton 
-            icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1 0-5.6"/><path d="M8 20a2 2 0 1 0 4 0"/></svg>}
-            label="抓取網頁朗讀"
-            onClick={() => { onOpenWebReader(); onClose(); }}
-          />
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-3">
+            <button
+              type="button"
+              onClick={onOpenWebReader}
+              className="w-full flex items-center gap-3 text-left p-2 rounded-xl hover:bg-white/5 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <span className="text-sm font-bold text-slate-200">網址抓取</span>
+            </button>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-2">
-            <div className="text-[11px] font-bold text-slate-400">在選單直接抓取網址</div>
             <input
               value={menuWebUrl}
               onChange={(e) => setMenuWebUrl(e.target.value)}
-              placeholder="貼上網址"
+              placeholder="貼上網址後立即抓取"
               className="w-full bg-slate-900/70 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
             />
             <button
@@ -103,6 +126,55 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               立即抓取
             </button>
+
+            <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+              <div className="text-[11px] text-slate-400 font-bold mb-1">播放速度</div>
+              <div className="text-white font-bold text-sm mb-2">{webRate.toFixed(1)}x</div>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.1"
+                value={webRate}
+                onChange={(e) => onWebRateChange(parseFloat(e.target.value))}
+                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+              />
+            </div>
+
+            <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+              <div className="text-[11px] text-slate-400 font-bold mb-2">語音</div>
+              <select
+                value={webVoice}
+                onChange={(e) => onWebVoiceChange(e.target.value)}
+                className="w-full bg-slate-800 text-xs font-bold rounded-lg px-2 py-2 focus:outline-none border border-white/5 text-white"
+              >
+                {webVoices.length === 0 && <option value="">預設</option>}
+                {webVoices.map(v => (
+                  <option key={v.name} value={v.name}>
+                    {v.name} ({v.lang || 'unknown'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3 space-y-2">
+              <div className="text-[11px] text-slate-400 font-bold">AI 朗讀（GEMINI）</div>
+              <input
+                value={webApiKey}
+                onChange={(e) => onWebApiKeyChange(e.target.value)}
+                placeholder="API Key 選填，未填則使用預設"
+                className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+              />
+              <label className="flex items-center gap-2 text-sm text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={webUseAiNarration}
+                  onChange={(e) => onWebUseAiNarrationChange(e.target.checked)}
+                  className="accent-indigo-500"
+                />
+                使用 AI 朗讀
+              </label>
+            </div>
           </div>
 
           <div className="h-px bg-white/5 my-4" />
