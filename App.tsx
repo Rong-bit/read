@@ -156,7 +156,6 @@ const App: React.FC = () => {
   const boundaryTickRef = useRef<number | null>(null);
   const ttsStartAtRef = useRef<number>(0);
   const lastAutoScrollAtRef = useRef<number>(0);
-  const lastAutoScrollYRef = useRef<number>(0);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
 
   const syncReadingPosition = (charIndex: number | null) => {
@@ -168,11 +167,9 @@ const App: React.FC = () => {
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
     const targetTop = Math.max(0, (lineNumber - 1) * lineHeight);
-    const absoluteTop = textarea.getBoundingClientRect().top + window.scrollY + targetTop;
-    const viewportHeight = window.innerHeight || 800;
-    const desiredY = Math.max(0, absoluteTop - viewportHeight * 0.5);
-    const currentY = window.scrollY;
-    const lineYInViewport = absoluteTop - currentY;
+    const viewportHeight = textarea.clientHeight || 600;
+    const currentTop = textarea.scrollTop;
+    const lineYInViewport = targetTop - currentTop;
     const safeTop = viewportHeight * 0.35;
     const safeBottom = viewportHeight * 0.65;
     const now = Date.now();
@@ -180,15 +177,12 @@ const App: React.FC = () => {
     // 朗讀行仍在中央安全區就不捲動，避免視覺抖動。
     if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
     if (now - lastAutoScrollAtRef.current < 500) return;
-
-    // 朗讀是往前走，只允許向下捲以避免上下來回跳動。
-    const nextY = Math.max(currentY, desiredY);
-    if (Math.abs(nextY - currentY) < 120) return;
-    if (nextY < lastAutoScrollYRef.current) return;
+    const desiredTop = Math.max(0, targetTop - viewportHeight * 0.5);
+    const nextTop = Math.max(currentTop, desiredTop);
+    if (Math.abs(nextTop - currentTop) < 80) return;
 
     lastAutoScrollAtRef.current = now;
-    lastAutoScrollYRef.current = nextY;
-    window.scrollTo({ top: nextY, behavior: 'auto' });
+    textarea.scrollTo({ top: nextTop, behavior: 'auto' });
   };
 
   useEffect(() => {
@@ -397,10 +391,9 @@ const App: React.FC = () => {
               onChange={(e) => setWebText(e.target.value)}
               placeholder="在此貼上小說內容，或從側邊欄使用「網址抓取」..."
               style={{ 
-                fontSize: `${fontSize}px`,
-                fieldSizing: 'content' as any 
+                fontSize: `${fontSize}px`
               }}
-              className={`w-full bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font min-h-screen ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
+              className={`w-full h-[70vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
             />
           </div>
         </div>
