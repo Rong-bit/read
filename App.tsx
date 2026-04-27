@@ -14,6 +14,8 @@ const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
 const STORAGE_KEY_WEB_RATE = 'web_reader_rate';
 const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_WEB_LIST = 'web_reader_list';
+const STORAGE_KEY_WEB_USE_AI = 'web_reader_use_ai';
+const STORAGE_KEY_WEB_API_KEY = 'web_reader_api_key';
 
 function getNovelText(novel: NovelContent | null): string {
   if (!novel) return '';
@@ -54,6 +56,8 @@ const App: React.FC = () => {
   const [webIsPaused, setWebIsPaused] = useState(false);
   const [webVoices, setWebVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [webVoice, setWebVoice] = useState('');
+  const [webUseAiNarration, setWebUseAiNarration] = useState(true);
+  const [webApiKey, setWebApiKey] = useState('');
   const [webList, setWebList] = useState<Array<{ id: string; title: string; text: string }>>([]);
   const [showShareHelp, setShowShareHelp] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
@@ -96,6 +100,12 @@ const App: React.FC = () => {
       } catch {}
     }
 
+    const savedWebUseAi = localStorage.getItem(STORAGE_KEY_WEB_USE_AI);
+    if (savedWebUseAi) setWebUseAiNarration(savedWebUseAi === 'true');
+
+    const savedWebApiKey = localStorage.getItem(STORAGE_KEY_WEB_API_KEY);
+    if (savedWebApiKey) setWebApiKey(savedWebApiKey);
+
     const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
     if (savedProgress) {
       const p = JSON.parse(savedProgress);
@@ -125,6 +135,14 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_WEB_LIST, JSON.stringify(webList));
   }, [webList]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_WEB_USE_AI, String(webUseAiNarration));
+  }, [webUseAiNarration]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_WEB_API_KEY, webApiKey);
+  }, [webApiKey]);
 
   useEffect(() => {
     const updateOnline = () => setIsOnline(navigator.onLine);
@@ -485,6 +503,15 @@ const App: React.FC = () => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
           void handleWebFetch(url);
         }}
+        webRate={webRate}
+        onWebRateChange={setWebRate}
+        webVoice={webVoice}
+        webVoices={webVoices}
+        onWebVoiceChange={setWebVoice}
+        webUseAiNarration={webUseAiNarration}
+        onWebUseAiNarrationChange={setWebUseAiNarration}
+        webApiKey={webApiKey}
+        onWebApiKeyChange={setWebApiKey}
         onNewSearch={() => setShowSearch(true)}
         currentNovelTitle={novel?.title}
       />
