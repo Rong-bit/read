@@ -156,6 +156,7 @@ const App: React.FC = () => {
   const boundaryTickRef = useRef<number | null>(null);
   const ttsStartAtRef = useRef<number>(0);
   const lastAutoScrollAtRef = useRef<number>(0);
+  const lastAutoScrollYRef = useRef<number>(0);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
 
   const syncReadingPosition = (charIndex: number | null) => {
@@ -166,19 +167,28 @@ const App: React.FC = () => {
     const computed = window.getComputedStyle(textarea);
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
-    const targetTop = Math.max(0, (lineNumber - 4) * lineHeight);
+    const targetTop = Math.max(0, (lineNumber - 1) * lineHeight);
     const absoluteTop = textarea.getBoundingClientRect().top + window.scrollY + targetTop;
-    const desiredY = Math.max(0, absoluteTop - 120);
+    const viewportHeight = window.innerHeight || 800;
+    const desiredY = Math.max(0, absoluteTop - viewportHeight * 0.5);
     const currentY = window.scrollY;
-    const distance = Math.abs(desiredY - currentY);
+    const lineYInViewport = absoluteTop - currentY;
+    const safeTop = viewportHeight * 0.35;
+    const safeBottom = viewportHeight * 0.65;
     const now = Date.now();
 
-    // 僅在偏離明顯時才捲動，避免每次字元更新都造成畫面抖動。
-    if (distance < 140) return;
-    if (now - lastAutoScrollAtRef.current < 450) return;
+    // 朗讀行仍在中央安全區就不捲動，避免視覺抖動。
+    if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
+    if (now - lastAutoScrollAtRef.current < 500) return;
+
+    // 朗讀是往前走，只允許向下捲以避免上下來回跳動。
+    const nextY = Math.max(currentY, desiredY);
+    if (Math.abs(nextY - currentY) < 120) return;
+    if (nextY < lastAutoScrollYRef.current) return;
 
     lastAutoScrollAtRef.current = now;
-    window.scrollTo({ top: desiredY, behavior: 'auto' });
+    lastAutoScrollYRef.current = nextY;
+    window.scrollTo({ top: nextY, behavior: 'auto' });
   };
 
   useEffect(() => {
