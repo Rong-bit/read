@@ -31,6 +31,9 @@ jobs:
         env:
           NPM_CONFIG_PRODUCTION: "false"
       
+      - name: Ensure Tailwind PostCSS plugin is installed
+        run: npm install @tailwindcss/postcss --no-save --include=dev
+      
       - name: Verify Tailwind PostCSS plugin
         run: npm ls @tailwindcss/postcss
       
