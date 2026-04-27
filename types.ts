@@ -1,8 +1,16 @@
 
+export interface ChapterInfo {
+  title: string;
+  url: string;
+}
+
 export interface NovelContent {
   title: string;
   content: string;
   sourceUrl?: string;
+  nextChapterUrl?: string;
+  prevChapterUrl?: string;
+  chapters?: ChapterInfo[];
   groundingSources?: any[];
 }
 
