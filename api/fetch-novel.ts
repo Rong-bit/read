@@ -2,7 +2,7 @@ import { fetchNovelFromUrl } from './_lib/scraper.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -10,13 +10,16 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     res.status(405).json({ error: 'Method Not Allowed' });
     return;
   }
 
   try {
-    const { url, currentTitle } = req.body || {};
+    const payload = req.method === 'GET'
+      ? req.query || {}
+      : (req.body || {});
+    const { url, currentTitle } = payload;
     if (!url) {
       res.status(400).json({ error: '缺少網址參數' });
       return;
