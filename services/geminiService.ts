@@ -4,10 +4,16 @@ import { NovelContent } from "../types.ts";
 // Fix: Always use process.env.API_KEY as per guidelines and removed fallback to import.meta.env
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const getFetchNovelApiUrl = (): string => {
+const getFetchNovelApiUrl = (): string | null => {
   const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
   // 未設定時保持本地開發行為：走同源 /api/fetch-novel
-  if (!baseUrl) return '/api/fetch-novel';
+  if (!baseUrl) {
+    // GitHub Pages 是靜態託管，沒有後端 /api 可用
+    if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
+      return null;
+    }
+    return '/api/fetch-novel';
+  }
   return `${baseUrl.replace(/\/+$/, '')}/api/fetch-novel`;
 };
 
@@ -29,6 +35,9 @@ export const fetchNovelContent = async (input: string, currentTitle?: string): P
     console.log('開始抓取小說，URL:', url);
     try {
       const apiUrl = getFetchNovelApiUrl();
+      if (!apiUrl) {
+        throw new Error('目前為 GitHub Pages 靜態部署，請設定 VITE_API_BASE_URL 指向可用後端 API。');
+      }
       console.log('發送請求到', apiUrl);
       const res = await fetch(apiUrl, {
         method: 'POST',
