@@ -153,6 +153,8 @@ const App: React.FC = () => {
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const webAiPlayingRef = useRef(false);
   const webTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const boundaryTickRef = useRef<number | null>(null);
+  const ttsStartAtRef = useRef<number>(0);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
 
   const syncReadingPosition = (charIndex: number | null) => {
@@ -165,7 +167,8 @@ const App: React.FC = () => {
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
     const targetTop = Math.max(0, (lineNumber - 4) * lineHeight);
     textarea.setSelectionRange(clamped, clamped);
-    textarea.scrollTo({ top: targetTop, behavior: 'smooth' });
+    const absoluteTop = textarea.getBoundingClientRect().top + window.scrollY + targetTop;
+    window.scrollTo({ top: Math.max(0, absoluteTop - 120), behavior: 'smooth' });
   };
 
   useEffect(() => {
@@ -260,11 +263,34 @@ const App: React.FC = () => {
       const utterance = new SpeechSynthesisUtterance(text);
       if (webVoice) { const selectedVoice = webVoices.find(v => v.name === webVoice); if (selectedVoice) utterance.voice = selectedVoice; }
       utterance.rate = webRate;
-      utterance.onstart = () => { setWebIsSpeaking(true); setWebIsPaused(false); setReadingCharIndex(0); };
+      utterance.onstart = () => {
+        setWebIsSpeaking(true);
+        setWebIsPaused(false);
+        setReadingCharIndex(0);
+        ttsStartAtRef.current = Date.now();
+        if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
+        // 部分瀏覽器/語音不會穩定觸發 onboundary，使用時間估算做備援同步。
+        boundaryTickRef.current = window.setInterval(() => {
+          if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
+          const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
+          const charsPerSec = Math.max(4, 8 * webRate);
+          const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
+          setReadingCharIndex((prev) => {
+            const next = Math.min(text.length, estimatedIndex);
+            if (prev === null) return next;
+            return Math.max(prev, next);
+          });
+        }, 180);
+      };
       utterance.onboundary = (event: SpeechSynthesisEvent) => {
         if (typeof event.charIndex === 'number') setReadingCharIndex(event.charIndex);
       };
-      utterance.onend = () => { setWebIsSpeaking(false); setWebIsPaused(false); setReadingCharIndex(null); };
+      utterance.onend = () => {
+        if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
+        setWebIsSpeaking(false);
+        setWebIsPaused(false);
+        setReadingCharIndex(null);
+      };
       utterance.onerror = () => handleWebStop();
       window.speechSynthesis.speak(utterance);
     }
@@ -273,6 +299,7 @@ const App: React.FC = () => {
   const handleWebStop = () => {
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
+    if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
     setWebIsSpeaking(false); setWebIsPaused(false); setWebAiLoading(false);
     setReadingCharIndex(null);
   };
@@ -350,7 +377,7 @@ const App: React.FC = () => {
                 fontSize: `${fontSize}px`,
                 fieldSizing: 'content' as any 
               }}
-              className={`w-full bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-hidden serif-font min-h-screen ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
+              className={`w-full bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font min-h-screen ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
             />
           </div>
         </div>
