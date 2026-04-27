@@ -8,17 +8,7 @@ interface SidebarProps {
   onOpenBrowse: () => void;
   onOpenLibrary: () => void;
   onNewSearch: () => void;
-  onOpenUrlModal?: () => void;
   currentNovelTitle?: string;
-  webRate?: number;
-  setWebRate?: (v: number) => void;
-  webVoice?: string;
-  setWebVoice?: (v: string) => void;
-  webVoices?: SpeechSynthesisVoice[];
-  geminiApiKey?: string;
-  setGeminiApiKey?: (v: string) => void;
-  useAiReading?: boolean;
-  setUseAiReading?: (v: boolean) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -28,17 +18,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenBrowse, 
   onOpenLibrary,
   onNewSearch,
-  onOpenUrlModal,
-  currentNovelTitle,
-  webRate = 0.8,
-  setWebRate,
-  webVoice = '',
-  setWebVoice,
-  webVoices = [],
-  geminiApiKey = '',
-  setGeminiApiKey,
-  useAiReading = false,
-  setUseAiReading
+  currentNovelTitle 
 }) => {
   return (
     <>
@@ -75,79 +55,24 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
 
           <MenuButton 
-            icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>}
-            label="網址抓取"
-            onClick={() => { onOpenUrlModal?.(); onClose(); }}
+            icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>}
+            label="搜尋新小說"
+            onClick={() => { onNewSearch(); onClose(); }}
           />
 
-          {setWebRate != null && (
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">播放速度</div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-bold text-slate-200 tabular-nums w-10">{webRate.toFixed(1)}x</span>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2.0"
-                  step="0.1"
-                  value={webRate}
-                  onChange={(e) => setWebRate(parseFloat(e.target.value))}
-                  className="flex-1 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                />
-              </div>
-            </div>
-          )}
-
-          {setWebVoice != null && (
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">語音</div>
-              <select
-                value={webVoice}
-                onChange={(e) => setWebVoice(e.target.value)}
-                className="w-full bg-slate-800 text-sm font-medium rounded-xl px-3 py-2 focus:outline-none border border-white/5 text-white"
-              >
-                {webVoices.length === 0 && <option value="">預設</option>}
-                {webVoices.map(v => (
-                  <option key={v.name} value={v.name}>
-                    {v.name} {v.lang ? `(${v.lang})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {setGeminiApiKey != null && (
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">AI 朗讀（Gemini）</div>
-              <input
-                type="password"
-                value={geminiApiKey}
-                onChange={(e) => setGeminiApiKey(e.target.value)}
-                placeholder="API Key 選填，未填則使用預設"
-                className="w-full bg-slate-800 text-sm rounded-xl px-3 py-2 focus:outline-none border border-white/5 text-white placeholder:text-slate-500"
-                autoComplete="off"
-              />
-              {setUseAiReading != null && (
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={useAiReading}
-                    onChange={(e) => setUseAiReading(e.target.checked)}
-                    className="w-4 h-4 rounded border-white/20 bg-slate-800 text-indigo-500 focus:ring-indigo-500"
-                  />
-                  <span className="text-sm text-slate-300">使用 AI 朗讀</span>
-                </label>
-              )}
-            </div>
-          )}
-
-          <div className="h-px bg-white/5 my-4" />
-
+          <MenuButton 
+            icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 6h10"/></svg>}
+            label="我的書庫"
+            onClick={() => { onOpenLibrary(); onClose(); }}
+          />
+          
           <MenuButton 
             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>}
             label="瀏覽熱門書源"
             onClick={() => { onOpenBrowse(); onClose(); }}
           />
+
+          <div className="h-px bg-white/5 my-4" />
 
           <MenuButton 
             icon={<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>}
