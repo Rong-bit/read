@@ -474,6 +474,10 @@ const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenBrowse={() => setIsBrowseOpen(true)}
         onOpenLibrary={() => setIsBrowseOpen(true)}
+        onOpenWebReader={() => {
+          setReaderMode('web');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
         onNewSearch={() => setShowSearch(true)}
         currentNovelTitle={novel?.title}
       />
