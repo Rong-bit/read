@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface SidebarProps {
   onOpenBrowse: () => void;
   onOpenLibrary: () => void;
   onOpenWebReader: () => void;
+  onFetchWebFromMenu: (url: string) => void;
   onNewSearch: () => void;
   currentNovelTitle?: string;
 }
@@ -19,9 +20,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenBrowse, 
   onOpenLibrary,
   onOpenWebReader,
+  onFetchWebFromMenu,
   onNewSearch,
   currentNovelTitle 
 }) => {
+  const [menuWebUrl, setMenuWebUrl] = useState('');
+
   return (
     <>
       {/* Backdrop */}
@@ -79,6 +83,27 @@ const Sidebar: React.FC<SidebarProps> = ({
             label="抓取網頁朗讀"
             onClick={() => { onOpenWebReader(); onClose(); }}
           />
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-2">
+            <div className="text-[11px] font-bold text-slate-400">在選單直接抓取網址</div>
+            <input
+              value={menuWebUrl}
+              onChange={(e) => setMenuWebUrl(e.target.value)}
+              placeholder="貼上網址"
+              className="w-full bg-slate-900/70 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!menuWebUrl.trim()) return;
+                onFetchWebFromMenu(menuWebUrl);
+                onClose();
+              }}
+              className="w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors"
+            >
+              立即抓取
+            </button>
+          </div>
 
           <div className="h-px bg-white/5 my-4" />
 
