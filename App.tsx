@@ -253,6 +253,7 @@ const App: React.FC = () => {
   const novelRef = useRef<NovelContent | null>(null);
   const autoAdvanceInFlightRef = useRef(false);
   const shouldAutoplayAfterSearchRef = useRef(false);
+  const pendingBrowserSpeechRef = useRef<{ fullText: string; offset: number; text: string } | null>(null);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
   const [readingLineViewportY, setReadingLineViewportY] = useState<number | null>(null);
   const [readingLineHeight, setReadingLineHeight] = useState<number>(36);
@@ -456,6 +457,19 @@ const App: React.FC = () => {
     }
   };
 
+  const primeSystemSpeech = () => {
+    if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') return;
+    try {
+      const warmup = new SpeechSynthesisUtterance('\u200b');
+      warmup.volume = 0;
+      warmup.rate = 1;
+      window.speechSynthesis.speak(warmup);
+      window.speechSynthesis.cancel();
+    } catch {
+      // ignore warmup failures; fallback path still handles retry prompt
+    }
+  };
+
   const handleSubmitSearch = async () => {
     let value = webUrl.trim();
     if (!value) return;
@@ -496,6 +510,7 @@ const App: React.FC = () => {
 
   const startBrowserSpeech = (fullText: string, offset: number, text: string) => {
     handleWebStop();
+    pendingBrowserSpeechRef.current = null;
     const utterance = new SpeechSynthesisUtterance(text);
     if (webVoice) { const selectedVoice = webVoices.find(v => v.name === webVoice); if (selectedVoice) utterance.voice = selectedVoice; }
     utterance.rate = webRate;
@@ -538,11 +553,25 @@ const App: React.FC = () => {
         if (!moved) setReadingCharIndex(null);
       })();
     };
-    utterance.onerror = () => handleWebStop();
+    utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+      handleWebStop();
+      const errType = String((event as any)?.error || '').toLowerCase();
+      if (errType === 'not-allowed' || errType === 'notallowed' || errType === 'interrupted') {
+        pendingBrowserSpeechRef.current = { fullText, offset, text };
+        showToast('手機需再按一次播放，啟用系統語音');
+      }
+    };
     window.speechSynthesis.speak(utterance);
   };
 
   const handleWebPlayPause = async () => {
+    primeSystemSpeech();
+    if (pendingBrowserSpeechRef.current && !webAiPlayingRef.current && !window.speechSynthesis.speaking) {
+      const pending = pendingBrowserSpeechRef.current;
+      pendingBrowserSpeechRef.current = null;
+      startBrowserSpeech(pending.fullText, pending.offset, pending.text);
+      return;
+    }
     const fullText = webText;
     if (!fullText.trim()) return;
     const firstContentIndex = fullText.search(/\S/);
