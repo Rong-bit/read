@@ -254,9 +254,9 @@ const App: React.FC = () => {
     const lineYInViewport = targetTop - currentTop;
     setReadingLineViewportY(Math.max(0, lineYInViewport));
     setReadingLineHeight(lineHeight);
-    const anchorRatio = 0.43; // 再往上微調，避免朗讀行視覺偏下
-    const safeTop = viewportHeight * 0.31;
-    const safeBottom = viewportHeight * 0.55;
+    const anchorRatio = 0.4; // 再上移一些，讓朗讀行更接近中上區
+    const safeTop = viewportHeight * 0.28;
+    const safeBottom = viewportHeight * 0.52;
     const now = Date.now();
     const minStepPx = Math.max(lineHeight * 0.7, 20); // 太小就忽略，避免抖動但保留校正能力
     const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
@@ -439,12 +439,13 @@ const App: React.FC = () => {
           startAiProgressLoop();
           setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
         } catch (e: any) {
-          const msg = e?.message ? `AI 朗讀失敗，已切換系統朗讀：${e.message}` : "AI 朗讀失敗，已切換系統朗讀。";
-          setWebError(msg);
+          // AI 失敗時靜默降級到系統朗讀，避免錯誤訊息長駐畫面。
+          setWebError((prev) => (prev?.startsWith('AI 朗讀') ? null : prev));
           webAiPlayingRef.current = false;
           stopAiProgressLoop();
           sourceRef.current = null;
           setWebAiLoading(false);
+          console.warn('AI 朗讀失敗，已自動切換系統朗讀', e);
           startBrowserSpeech(fullText, offset, text);
         }
       };
