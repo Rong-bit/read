@@ -202,6 +202,8 @@ const App: React.FC = () => {
     charEnd: number;
   } | null>(null);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
+  const [readingLineViewportY, setReadingLineViewportY] = useState<number | null>(null);
+  const [readingLineHeight, setReadingLineHeight] = useState<number>(36);
 
   const stopAiProgressLoop = () => {
     if (aiProgressRafRef.current !== null) {
@@ -234,7 +236,10 @@ const App: React.FC = () => {
 
   const syncReadingPosition = (charIndex: number | null) => {
     const textarea = webTextareaRef.current;
-    if (!textarea || charIndex === null) return;
+    if (!textarea || charIndex === null) {
+      setReadingLineViewportY(null);
+      return;
+    }
     const clamped = Math.max(0, Math.min(charIndex, textarea.value.length));
     const computed = window.getComputedStyle(textarea);
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
@@ -243,6 +248,8 @@ const App: React.FC = () => {
     const viewportHeight = textarea.clientHeight || 600;
     const currentTop = textarea.scrollTop;
     const lineYInViewport = targetTop - currentTop;
+    setReadingLineViewportY(Math.max(0, lineYInViewport));
+    setReadingLineHeight(lineHeight);
     const anchorRatio = 0.43; // 再往上微調，避免朗讀行視覺偏下
     const safeTop = viewportHeight * 0.31;
     const safeBottom = viewportHeight * 0.55;
@@ -262,7 +269,21 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    if (readingCharIndex === null) {
+      setReadingLineViewportY(null);
+      return;
+    }
     syncReadingPosition(readingCharIndex);
+  }, [readingCharIndex, fontSize]);
+
+  useEffect(() => {
+    const textarea = webTextareaRef.current;
+    if (!textarea) return;
+    const handleScroll = () => {
+      if (readingCharIndex !== null) syncReadingPosition(readingCharIndex);
+    };
+    textarea.addEventListener('scroll', handleScroll);
+    return () => textarea.removeEventListener('scroll', handleScroll);
   }, [readingCharIndex, fontSize]);
 
   useEffect(() => {
@@ -481,17 +502,28 @@ const App: React.FC = () => {
                 {webError}
               </div>
             )}
-            
-            <textarea
-              ref={webTextareaRef}
-              value={webText}
-              onChange={(e) => setWebText(e.target.value)}
-              placeholder="在此貼上小說內容，或從側邊欄使用「網址抓取」..."
-              style={{ 
-                fontSize: `${fontSize}px`
-              }}
-              className={`w-full h-[70vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
-            />
+
+            <div className="relative w-full">
+              {readingLineViewportY !== null && (
+                <div
+                  className="pointer-events-none absolute left-2 right-2 z-10 transition-[top] duration-150"
+                  style={{ top: readingLineViewportY, height: readingLineHeight }}
+                >
+                  <div className={`w-full h-full rounded-md ${theme === 'sepia' ? 'bg-[#5b4636]/10' : 'bg-indigo-400/12'}`}></div>
+                  <div className={`absolute left-2 top-1/2 -translate-y-1/2 w-[2px] h-[70%] rounded-full animate-pulse ${theme === 'sepia' ? 'bg-[#5b4636]/60' : 'bg-indigo-300/80'}`}></div>
+                </div>
+              )}
+              <textarea
+                ref={webTextareaRef}
+                value={webText}
+                onChange={(e) => setWebText(e.target.value)}
+                placeholder="在此貼上小說內容，或從側邊欄使用「網址抓取」..."
+                style={{ 
+                  fontSize: `${fontSize}px`
+                }}
+                className={`relative z-20 w-full h-[70vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
+              />
+            </div>
           </div>
         </div>
       </main>
