@@ -524,7 +524,8 @@ const App: React.FC = () => {
       novelRef.current?.sourceUrl
     );
     if (!nextUrl) return false;
-    if (autoAdvanceInFlightRef.current) return true;
+    // 若已有跳章流程進行中，不應回報成功，避免呼叫端誤判為已完成切章。
+    if (autoAdvanceInFlightRef.current) return false;
     autoAdvanceInFlightRef.current = true;
     shouldAutoplayAfterSearchRef.current = true;
     try {
