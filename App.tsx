@@ -539,10 +539,9 @@ const App: React.FC = () => {
               {readingLineViewportY !== null && (
                 <div
                   className="pointer-events-none absolute left-0 right-0 z-10 transition-[top] duration-150"
-                  style={{ top: readingLineViewportY, height: readingLineHeight }}
+                  style={{ top: Math.max(0, readingLineViewportY - 2), height: readingLineHeight + 4 }}
                 >
-                  <div className={`w-full h-full rounded-md ${theme === 'sepia' ? 'bg-[#5b4636]/10' : 'bg-indigo-400/12'}`}></div>
-                  <div className={`absolute left-2 top-1/2 -translate-y-1/2 w-[2px] h-[70%] rounded-full animate-pulse ${theme === 'sepia' ? 'bg-[#5b4636]/60' : 'bg-indigo-300/80'}`}></div>
+                  <div className={`w-full h-full rounded-sm ${theme === 'sepia' ? 'bg-[#5b4636]/10' : 'bg-indigo-400/12'}`}></div>
                 </div>
               )}
               <textarea
