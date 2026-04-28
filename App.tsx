@@ -4,12 +4,21 @@ import { NovelContent, ReaderState } from './types.ts';
 import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
 import { getSafeOpenUrl } from './utils/urlUtils.ts';
+import * as OpenCC from 'opencc-js';
 
 const STORAGE_KEY_SETTINGS = 'gemini_reader_settings';
 const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
 const STORAGE_KEY_WEB_RATE = 'web_reader_rate';
 const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
+type BookmarkData = {
+  title: string;
+  sourceUrl: string;
+  scrollTop: number;
+  readingCharIndex: number | null;
+  savedAt: number;
+};
+const s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' });
 
 function splitTextForTTS(text: string, maxCharsPerSegment: number = 1200): string[] {
   const trimmed = text.trim();
@@ -124,6 +133,7 @@ type LocalSidebarProps = {
   onOpenBrowse: () => void;
   onOpenLibrary: () => void;
   onNewSearch: () => void;
+  onConvertToTraditional?: () => void;
   onOpenUrlModal?: () => void;
   currentNovelTitle?: string;
   webRate?: number;
@@ -141,6 +151,7 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   onOpenSettings,
   onOpenBrowse,
   onNewSearch,
+  onConvertToTraditional,
   onOpenUrlModal,
   currentNovelTitle
 }) => (
@@ -153,6 +164,7 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       {currentNovelTitle ? <div className="text-sm text-slate-100/95 truncate font-medium">{currentNovelTitle}</div> : null}
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onNewSearch(); onClose(); }}>新搜尋</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
+      <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onConvertToTraditional?.(); onClose(); }}>簡轉繁</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
     </div>
@@ -193,6 +205,7 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const pendingRestoreRef = useRef<BookmarkData | null>(null);
   const webAiPlayingRef = useRef(false);
   const webTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const boundaryTickRef = useRef<number | null>(null);
@@ -306,11 +319,22 @@ const App: React.FC = () => {
     if (savedWebRate) setWebRate(parseFloat(savedWebRate));
     const savedUseAi = localStorage.getItem(STORAGE_KEY_USE_AI_READING);
     if (savedUseAi === 'true') setUseAiReading(true);
+    const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
+    if (savedProgress) setShowResumeToast(true);
 
     const loadVoices = () => setWebVoices(window.speechSynthesis.getVoices());
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
+
+  useEffect(() => {
+    const pending = pendingRestoreRef.current;
+    const textarea = webTextareaRef.current;
+    if (!pending || !textarea || !webText.trim()) return;
+    textarea.scrollTo({ top: Math.max(0, pending.scrollTop), behavior: 'auto' });
+    setReadingCharIndex(pending.readingCharIndex ?? null);
+    pendingRestoreRef.current = null;
+  }, [webText]);
 
   const initAudioContext = () => {
     if (!audioContextRef.current) {
@@ -510,7 +534,50 @@ const App: React.FC = () => {
       savedAt: Date.now(),
     };
     localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(payload));
+    setShowResumeToast(true);
     showToast('書籤已儲存');
+  };
+
+  const handleRestoreBookmark = async () => {
+    const raw = localStorage.getItem(STORAGE_KEY_PROGRESS);
+    if (!raw) {
+      showToast('尚未儲存書籤');
+      return;
+    }
+    let data: BookmarkData;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      showToast('書籤資料已損毀');
+      return;
+    }
+    if (!data?.sourceUrl) {
+      showToast('書籤缺少來源網址');
+      return;
+    }
+    pendingRestoreRef.current = data;
+    setShowResumeToast(false);
+    await handleSearch(data.sourceUrl);
+    showToast('已回到書籤位置');
+  };
+
+  const handleConvertToTraditional = () => {
+    if (!webText.trim()) {
+      showToast('目前沒有可轉換的內容');
+      return;
+    }
+    setWebText((prev) => s2tConverter(prev));
+    setWebTitle((prev) => (prev ? s2tConverter(prev) : prev));
+    setNovel((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        title: prev.title ? s2tConverter(prev.title) : prev.title,
+        content: s2tConverter(prev.content || ''),
+        chapters: prev.chapters?.map((ch) => ({ ...ch, title: ch.title ? s2tConverter(ch.title) : ch.title })),
+      };
+    });
+    showToast('已轉為繁體');
   };
 
   return (
@@ -524,6 +591,7 @@ const App: React.FC = () => {
         onOpenBrowse={() => setIsBrowseOpen(true)}
         onOpenLibrary={() => setIsBrowseOpen(true)}
         onNewSearch={() => setShowSearch(true)}
+        onConvertToTraditional={handleConvertToTraditional}
         onOpenUrlModal={() => { setWebUrl(''); setIsUrlModalOpen(true); setIsMenuOpen(false); }}
         currentNovelTitle={novel?.title ?? webTitle}
         webRate={webRate}
@@ -607,10 +675,21 @@ const App: React.FC = () => {
           <button onClick={handleSaveBookmark} className="p-3 bg-amber-500 text-slate-950 border border-amber-200/50 rounded-full flex items-center justify-center hover:bg-amber-400 transition-all shadow-lg" title="儲存書籤">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 3a2 2 0 0 0-2 2v16l8-4.5L20 21V5a2 2 0 0 0-2-2H6z"/></svg>
           </button>
+          <button onClick={handleRestoreBookmark} className="p-3 bg-emerald-500 text-white border border-emerald-200/50 rounded-full flex items-center justify-center hover:bg-emerald-400 transition-all shadow-lg" title="回到書籤">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
+          </button>
           <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-700 text-slate-50 border border-white/20 rounded-full disabled:opacity-30 hover:bg-slate-600 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </button>
         </div>
+        {showResumeToast && (
+          <div className="mt-2 max-w-sm mx-auto pointer-events-auto">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-sm text-white/95">
+              <span>偵測到已儲存書籤</span>
+              <button className="px-2 py-1 rounded bg-emerald-500 text-white font-semibold" onClick={handleRestoreBookmark}>回到書籤</button>
+            </div>
+          </div>
+        )}
         {toastMessage && (
           <div className="mt-3 text-center text-sm text-white/95 bg-black/60 border border-white/15 rounded-lg px-3 py-2 max-w-xs mx-auto pointer-events-auto">
             {toastMessage}
