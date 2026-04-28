@@ -1,8 +1,15 @@
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { NovelContent } from "../types.ts";
 
-// Fix: Always use process.env.API_KEY as per guidelines and removed fallback to import.meta.env
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const resolveApiKey = (): string => {
+  const key = import.meta.env.VITE_API_KEY?.trim();
+  if (!key) {
+    throw new Error("缺少 API Key：請在前端環境變數設定 VITE_API_KEY");
+  }
+  return key;
+};
+
+const getAI = () => new GoogleGenAI({ apiKey: resolveApiKey() });
 
 const getFetchNovelApiUrl = (): string | null => {
   const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
