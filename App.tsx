@@ -86,11 +86,11 @@ type LocalHeaderProps = {
 };
 
 const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu, title }) => (
-  <header className="flex items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
-    <div className="min-w-0 text-base md:text-lg font-bold truncate text-slate-100">
+  <header className="relative flex items-center justify-center gap-3 px-4 md:px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
+    <div className="max-w-[70%] text-base md:text-lg font-bold truncate text-slate-100 text-center">
       {title || '未命名章節'}
     </div>
-    <button onClick={onToggleMenu} className="px-3 py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700/70 shrink-0">
+    <button onClick={onToggleMenu} className="absolute right-4 md:right-6 px-3 py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700/70 shrink-0">
       選單
     </button>
   </header>
@@ -502,15 +502,6 @@ const App: React.FC = () => {
       <main className="flex-1 w-full px-4 md:px-12 lg:px-24">
         <div className="max-w-[90rem] mx-auto pt-6 md:pt-8">
           <div className="space-y-8 pb-48">
-            {(webTitle || novel?.title) && (
-              <header className="mb-8 text-center animate-fade-in-up">
-                <h2 className={`text-2xl sm:text-3xl md:text-4xl serif-font tracking-tight mb-3 ${getTitleClass()}`}>
-                  {webTitle || novel?.title}
-                </h2>
-                <div className={`w-16 h-0.5 mx-auto rounded-full ${getDividerClass()}`}></div>
-              </header>
-            )}
-
             {webError && (
               <div className="p-4 bg-red-900/20 text-red-400 rounded-2xl border border-red-500/20 text-center animate-fade-in-up">
                 {webError}
