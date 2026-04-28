@@ -155,6 +155,7 @@ type LocalSidebarProps = {
   setUseAiReading?: (v: boolean) => void;
   autoNextChapter?: boolean;
   setAutoNextChapter?: (v: boolean) => void;
+  onAutoNextToggle?: (enabled: boolean) => void;
 };
 
 const Sidebar: React.FC<LocalSidebarProps> = ({
@@ -169,7 +170,8 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   webRate = 1,
   setWebRate,
   autoNextChapter = true,
-  setAutoNextChapter
+  setAutoNextChapter,
+  onAutoNextToggle
 }) => (
   <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900/95 border-l border-white/15 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
     <div className="p-4 border-b border-white/15 flex items-center justify-between">
@@ -185,7 +187,11 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
       <button
         className={`w-full text-left p-3.5 rounded-lg text-base font-bold border ${autoNextChapter ? 'bg-emerald-600 text-white border-emerald-300/40 hover:bg-emerald-500' : 'bg-slate-700 text-slate-100 border-white/25 hover:bg-slate-600'}`}
-        onClick={() => setAutoNextChapter?.(!autoNextChapter)}
+        onClick={() => {
+          const next = !autoNextChapter;
+          setAutoNextChapter?.(next);
+          onAutoNextToggle?.(next);
+        }}
       >
         自動下一章：{autoNextChapter ? '開' : '關'}
       </button>
@@ -871,6 +877,7 @@ const App: React.FC = () => {
         setWebRate={setWebRate}
       autoNextChapter={autoNextChapter}
       setAutoNextChapter={setAutoNextChapter}
+        onAutoNextToggle={(enabled) => showToast(enabled ? '已開啟自動下一章' : '已關閉自動下一章')}
         webVoice={webVoice}
         setWebVoice={setWebVoice}
         webVoices={webVoices}
