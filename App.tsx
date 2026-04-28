@@ -625,7 +625,12 @@ const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenBrowse={() => setIsBrowseOpen(true)}
         onOpenLibrary={() => setIsBrowseOpen(true)}
-        onNewSearch={() => setShowSearch(true)}
+        onNewSearch={() => {
+          handleWebStop();
+          setShowSearch(true);
+          setWebUrl('');
+          setIsUrlModalOpen(true);
+        }}
         onConvertToTraditional={handleConvertToTraditional}
         onOpenUrlModal={() => { setWebUrl(''); setIsUrlModalOpen(true); setIsMenuOpen(false); }}
         currentNovelTitle={novel?.title ?? webTitle}
