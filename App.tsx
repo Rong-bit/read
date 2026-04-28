@@ -621,6 +621,10 @@ const App: React.FC = () => {
       })();
     };
     utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+      if (suppressOnEndRef.current) {
+        suppressOnEndRef.current = false;
+        return;
+      }
       handleWebStop();
       const errType = String((event as any)?.error || '').toLowerCase();
       if (errType === 'not-allowed' || errType === 'notallowed' || errType === 'interrupted') {
@@ -756,6 +760,7 @@ const App: React.FC = () => {
 
   const handleWebStop = (resetReadingPosition: boolean = false) => {
     suppressOnEndRef.current = true;
+    pendingBrowserSpeechRef.current = null;
     stopAiProgressLoop();
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
     if (htmlAudioRef.current) {
