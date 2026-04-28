@@ -110,7 +110,7 @@ const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu, title }) => (
     <div className="max-w-[70%] text-base md:text-lg font-bold truncate text-slate-100 text-center">
       {title || ''}
     </div>
-    <button onClick={onToggleMenu} className="absolute right-4 md:right-6 px-3 py-2 rounded-lg bg-slate-700 text-slate-50 font-semibold border border-white/20 hover:bg-slate-600 shrink-0">
+    <button onClick={onToggleMenu} className="absolute right-4 md:right-6 top-1/2 -translate-y-1/2 px-3 py-2 rounded-lg bg-slate-700 text-slate-50 font-semibold border border-white/20 hover:bg-slate-600 shrink-0">
       選單
     </button>
   </header>
