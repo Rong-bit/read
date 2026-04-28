@@ -140,17 +140,17 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   onOpenUrlModal,
   currentNovelTitle
 }) => (
-  <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900 border-l border-white/10 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-    <div className="p-4 border-b border-white/10 flex items-center justify-between">
-      <span className="font-bold">選單</span>
-      <button onClick={onClose}>關閉</button>
+  <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900/95 border-l border-white/15 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+    <div className="p-4 border-b border-white/15 flex items-center justify-between">
+      <span className="font-bold text-slate-100 text-base">選單</span>
+      <button onClick={onClose} className="text-slate-200 text-sm font-semibold px-2 py-1 rounded bg-slate-700/60 hover:bg-slate-600/70">關閉</button>
     </div>
-    <div className="p-4 space-y-2">
-      {currentNovelTitle ? <div className="text-sm text-slate-300 truncate">{currentNovelTitle}</div> : null}
-      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onNewSearch(); onClose(); }}>新搜尋</button>
-      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
-      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
-      <button className="w-full text-left p-2 bg-slate-800 rounded" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
+    <div className="p-4 space-y-3">
+      {currentNovelTitle ? <div className="text-sm text-slate-100/95 truncate font-medium">{currentNovelTitle}</div> : null}
+      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onNewSearch(); onClose(); }}>新搜尋</button>
+      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
+      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
+      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
     </div>
   </div>
 );
