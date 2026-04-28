@@ -511,7 +511,7 @@ const App: React.FC = () => {
             <div className="relative w-full">
               {readingLineViewportY !== null && (
                 <div
-                  className="pointer-events-none absolute left-2 right-2 z-10 transition-[top] duration-150"
+                  className="pointer-events-none absolute left-0 right-0 z-10 transition-[top] duration-150"
                   style={{ top: readingLineViewportY, height: readingLineHeight }}
                 >
                   <div className={`w-full h-full rounded-md ${theme === 'sepia' ? 'bg-[#5b4636]/10' : 'bg-indigo-400/12'}`}></div>
