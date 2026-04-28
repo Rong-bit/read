@@ -520,6 +520,26 @@ const App: React.FC = () => {
           setReadingCharIndex(offset + currentSegment.start);
           const base64Audio = await generateSpeech(currentSegment.text, 'Kore');
           try {
+            aiPlaybackModeRef.current = 'htmlaudio';
+            const bytes = decode(base64Audio);
+            const byteBuffer = bytes.slice().buffer as ArrayBuffer;
+            const blob = new Blob([byteBuffer], { type: 'audio/mpeg' });
+            const objectUrl = URL.createObjectURL(blob);
+            const audio = new Audio(objectUrl);
+            htmlAudioRef.current = audio;
+            audio.onended = () => {
+              URL.revokeObjectURL(objectUrl);
+              htmlAudioRef.current = null;
+              if (webAiPlayingRef.current) playNextSegment(index + 1);
+            };
+            audio.onerror = () => {
+              URL.revokeObjectURL(objectUrl);
+              htmlAudioRef.current = null;
+              throw new Error('HTMLAudio 播放失敗');
+            };
+            await audio.play();
+          } catch {
+            // 若 HTMLAudio 在少數桌面環境被策略或裝置攔截，再退回 WebAudio。
             const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
             aiPlaybackModeRef.current = 'webaudio';
             const source = ctx.createBufferSource();
@@ -552,26 +572,6 @@ const App: React.FC = () => {
               charEnd: offset + currentSegment.end,
             };
             startAiProgressLoop();
-          } catch {
-            // 桌面瀏覽器若 WebAudio 解碼不穩，改用 HTMLAudio 直接播放 mp3。
-            aiPlaybackModeRef.current = 'htmlaudio';
-            const bytes = decode(base64Audio);
-            const byteBuffer = bytes.slice().buffer as ArrayBuffer;
-            const blob = new Blob([byteBuffer], { type: 'audio/mpeg' });
-            const objectUrl = URL.createObjectURL(blob);
-            const audio = new Audio(objectUrl);
-            htmlAudioRef.current = audio;
-            audio.onended = () => {
-              URL.revokeObjectURL(objectUrl);
-              htmlAudioRef.current = null;
-              if (webAiPlayingRef.current) playNextSegment(index + 1);
-            };
-            audio.onerror = () => {
-              URL.revokeObjectURL(objectUrl);
-              htmlAudioRef.current = null;
-              throw new Error('HTMLAudio 播放失敗');
-            };
-            await audio.play();
           }
           setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
         } catch (e: any) {
