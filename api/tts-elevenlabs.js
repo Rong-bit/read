@@ -20,6 +20,9 @@ const parseElevenLabsError = (rawText) => {
   }
 };
 
+const firstBytesHex = (bytes, n = 8) =>
+  Array.from(bytes.slice(0, n)).map((b) => b.toString(16).padStart(2, '0')).join(' ');
+
 export default async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') {
@@ -83,10 +86,16 @@ export default async function handler(req, res) {
     }
 
     const audioBytes = new Uint8Array(await ttsRes.arrayBuffer());
+    const upstreamContentType = ttsRes.headers.get('content-type') || '';
+    const debugFirst8BytesHex = firstBytesHex(audioBytes, 8);
     res.status(200).json({
       audioBase64: toBase64(audioBytes),
       sampleRate: 44100,
-      numChannels: 1
+      numChannels: 1,
+      debug: {
+        upstreamContentType,
+        first8BytesHex: debugFirst8BytesHex
+      }
     });
   } catch (error) {
     res.status(500).json({ error: error?.message || 'ElevenLabs TTS 請求失敗' });
