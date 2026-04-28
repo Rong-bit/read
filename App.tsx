@@ -273,6 +273,7 @@ const App: React.FC = () => {
   const autoAdvanceInFlightRef = useRef(false);
   const shouldAutoplayAfterSearchRef = useRef(false);
   const pendingBrowserSpeechRef = useRef<{ fullText: string; offset: number; text: string } | null>(null);
+  const forceStartFromTopRef = useRef(false);
 
   const getFriendlyError = (raw: string): string => {
     const text = (raw || '').toLowerCase();
@@ -469,7 +470,7 @@ const App: React.FC = () => {
 
   const handleSearch = async (input: string) => {
     try {
-      handleWebStop();
+      handleWebStop(true);
       setWebLoading(true);
       setWebError(null);
       const data = await fetchNovelContent(input);
@@ -519,11 +520,14 @@ const App: React.FC = () => {
   };
 
   const getPlaybackStartIndex = (text: string, preferredIndex: number | null): number => {
-    if (typeof preferredIndex === 'number' && Number.isFinite(preferredIndex)) {
-      return Math.max(0, Math.min(preferredIndex, text.length));
-    }
     const firstContentIndex = text.search(/\S/);
-    return firstContentIndex >= 0 ? firstContentIndex : 0;
+    const fallback = firstContentIndex >= 0 ? firstContentIndex : 0;
+    if (typeof preferredIndex === 'number' && Number.isFinite(preferredIndex)) {
+      const clamped = Math.max(0, Math.min(preferredIndex, text.length));
+      if (clamped >= Math.max(0, text.length - 1)) return fallback;
+      return clamped;
+    }
+    return fallback;
   };
 
   const handleSubmitSearch = async () => {
@@ -621,8 +625,8 @@ const App: React.FC = () => {
   };
 
   const handleWebPlayPause = async () => {
-    primeSystemSpeech();
     if (pendingBrowserSpeechRef.current && !webAiPlayingRef.current && !window.speechSynthesis.speaking) {
+      primeSystemSpeech();
       const pending = pendingBrowserSpeechRef.current;
       pendingBrowserSpeechRef.current = null;
       startBrowserSpeech(pending.fullText, pending.offset, pending.text);
@@ -630,7 +634,10 @@ const App: React.FC = () => {
     }
     const fullText = webText;
     if (!fullText.trim()) return;
-    const offset = getPlaybackStartIndex(fullText, readingCharIndex);
+    const offset = forceStartFromTopRef.current
+      ? getPlaybackStartIndex(fullText, null)
+      : getPlaybackStartIndex(fullText, readingCharIndex);
+    forceStartFromTopRef.current = false;
     const text = fullText.slice(offset);
     if (webAiPlayingRef.current) {
       if (aiPlaybackModeRef.current === 'htmlaudio' && htmlAudioRef.current) {
@@ -649,6 +656,8 @@ const App: React.FC = () => {
       else { window.speechSynthesis.pause(); setWebIsPaused(true); }
       return;
     }
+    // 僅在「新開始播放」前做一次系統語音預熱，避免干擾暫停/續播切換。
+    primeSystemSpeech();
     if (useAiReading) {
       handleWebStop();
       const segments = splitTextForTTSWithRanges(text, 1200);
@@ -738,7 +747,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleWebStop = () => {
+  const handleWebStop = (resetReadingPosition: boolean = false) => {
     stopAiProgressLoop();
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
     if (htmlAudioRef.current) {
@@ -750,7 +759,12 @@ const App: React.FC = () => {
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
     if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
     setWebIsSpeaking(false); setWebIsPaused(false); setWebAiLoading(false);
-    setReadingCharIndex(null);
+    if (resetReadingPosition) {
+      forceStartFromTopRef.current = true;
+      setReadingCharIndex(null);
+      const textarea = webTextareaRef.current;
+      if (textarea) textarea.scrollTo({ top: 0, behavior: 'auto' });
+    }
   };
 
   useEffect(() => {
@@ -901,7 +915,7 @@ const App: React.FC = () => {
         onOpenBrowse={() => setIsBrowseOpen(true)}
         onOpenLibrary={() => setIsBrowseOpen(true)}
         onNewSearch={() => {
-          handleWebStop();
+          handleWebStop(true);
           setShowSearch(true);
           setSearchMode('keyword');
           setWebUrl('');
