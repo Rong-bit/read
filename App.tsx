@@ -188,9 +188,11 @@ const App: React.FC = () => {
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [useAiReading, setUseAiReading] = useState(false);
   const [webAiLoading, setWebAiLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const webAiPlayingRef = useRef(false);
   const webTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const boundaryTickRef = useRef<number | null>(null);
@@ -488,6 +490,29 @@ const App: React.FC = () => {
     }
   };
 
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setToastMessage(msg);
+    toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 1800);
+  };
+
+  const handleSaveBookmark = () => {
+    const textarea = webTextareaRef.current;
+    if (!webText.trim() || !textarea) {
+      showToast('目前沒有可儲存的內容');
+      return;
+    }
+    const payload = {
+      title: webTitle || novel?.title || '未命名章節',
+      sourceUrl: novel?.sourceUrl || webUrl || '',
+      scrollTop: textarea.scrollTop,
+      readingCharIndex,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(payload));
+    showToast('書籤已儲存');
+  };
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-500 ${getThemeClass()}`}>
       <Header onToggleMenu={() => setIsMenuOpen(true)} title={webTitle || novel?.title} />
@@ -579,10 +604,18 @@ const App: React.FC = () => {
           <button onClick={handleWebStop} className="p-3 bg-rose-600 text-white border border-rose-300/40 rounded-full flex items-center justify-center hover:bg-rose-500 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
           </button>
+          <button onClick={handleSaveBookmark} className="p-3 bg-amber-500 text-slate-950 border border-amber-200/50 rounded-full flex items-center justify-center hover:bg-amber-400 transition-all shadow-lg" title="儲存書籤">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 3a2 2 0 0 0-2 2v16l8-4.5L20 21V5a2 2 0 0 0-2-2H6z"/></svg>
+          </button>
           <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-700 text-slate-50 border border-white/20 rounded-full disabled:opacity-30 hover:bg-slate-600 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </button>
         </div>
+        {toastMessage && (
+          <div className="mt-3 text-center text-sm text-white/95 bg-black/60 border border-white/15 rounded-lg px-3 py-2 max-w-xs mx-auto pointer-events-auto">
+            {toastMessage}
+          </div>
+        )}
       </div>
 
       {isSettingsOpen && (
