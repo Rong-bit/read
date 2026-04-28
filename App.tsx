@@ -394,8 +394,9 @@ const App: React.FC = () => {
   const handleSubmitSearch = async () => {
     const value = webUrl.trim();
     if (!value) return;
+    const looksLikeUrl = /^https?:\/\//i.test(value);
     if (searchMode === 'url') {
-      if (!/^https?:\/\//i.test(value)) {
+      if (!looksLikeUrl) {
         setWebError('網址模式請輸入完整網址（需含 http:// 或 https://）');
         return;
       }
@@ -403,6 +404,18 @@ const App: React.FC = () => {
         new URL(value);
       } catch {
         setWebError('網址格式不正確，請檢查後再試');
+        return;
+      }
+    } else if (looksLikeUrl) {
+      // 新搜尋模式：若使用者輸入的是網址字串，也先做合法性驗證，避免後端 fetch 500。
+      try {
+        const u = new URL(value);
+        if (!u.hostname || !u.hostname.includes('.')) {
+          setWebError('你輸入的是網址格式，但網域不完整。請改輸入書名關鍵字，或使用「網址抓取」並輸入完整網址。');
+          return;
+        }
+      } catch {
+        setWebError('網址格式不正確。若要搜尋書名，請不要加 https://；若要抓網址，請改用「網址抓取」。');
         return;
       }
     }
