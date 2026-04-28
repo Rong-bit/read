@@ -169,6 +169,7 @@ const App: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBrowseOpen, setIsBrowseOpen] = useState(false);
+  const [isChaptersOpen, setIsChaptersOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(true);
   const [fontSize, setFontSize] = useState(22);
   const [theme, setTheme] = useState<'dark' | 'sepia' | 'slate'>('dark');
@@ -331,6 +332,7 @@ const App: React.FC = () => {
       const data = await fetchNovelContent(input);
       const resolvedTitle = data.title?.trim() || deriveFallbackTitle(input, data.content || '');
       setNovel({ ...data, title: resolvedTitle });
+      setIsChaptersOpen(false);
       setWebTitle(resolvedTitle);
       setWebText(data.content);
       setShowSearch(false);
@@ -506,6 +508,31 @@ const App: React.FC = () => {
               <div className="p-4 bg-red-900/20 text-red-400 rounded-2xl border border-red-500/20 text-center animate-fade-in-up">
                 {webError}
               </div>
+            )}
+
+            {!!novel?.chapters?.length && (
+              <section className="rounded-2xl border border-white/10 bg-slate-900/40">
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3 text-slate-100 font-semibold"
+                  onClick={() => setIsChaptersOpen((v) => !v)}
+                >
+                  <span>章節目錄（{novel.chapters.length}）</span>
+                  <span className="text-slate-300">{isChaptersOpen ? '收合' : '展開'}</span>
+                </button>
+                {isChaptersOpen && (
+                  <div className="max-h-64 overflow-y-auto border-t border-white/10 px-2 py-2">
+                    {novel.chapters.map((ch, idx) => (
+                      <button
+                        key={`${ch.url}-${idx}`}
+                        className="w-full text-left px-3 py-2 rounded-lg text-slate-200 hover:bg-white/10"
+                        onClick={() => ch.url && handleSearch(ch.url)}
+                      >
+                        {ch.title || `第 ${idx + 1} 章`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
 
             <div className="relative w-full">
