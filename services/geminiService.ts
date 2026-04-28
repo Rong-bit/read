@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { NovelContent } from "../types.ts";
 
 // Fix: Always use process.env.API_KEY as per guidelines and removed fallback to import.meta.env
@@ -18,10 +18,90 @@ const getFetchNovelApiUrl = (): string | null => {
   return `${baseUrl.replace(/\/+$/, '')}/api/fetch-novel`;
 };
 
+const isLikelyUrlInput = (value: string): boolean => {
+  const raw = value.trim();
+  if (!raw) return false;
+  if (/^https?:\/\//i.test(raw)) return true;
+  if (/\s/.test(raw)) return false;
+  if (!raw.includes('.')) return false;
+  try {
+    const withScheme = `https://${raw}`;
+    const u = new URL(withScheme);
+    return Boolean(u.hostname && u.hostname.includes('.'));
+  } catch {
+    return false;
+  }
+};
+
+const fetchNovelByKeyword = async (keyword: string): Promise<NovelContent> => {
+  const ai = getAI();
+  const prompt = `請搜尋小說「${keyword}」，回傳可直接閱讀的章節全文。
+要求：
+1) 嚴禁摘要，盡量提供完整章節正文。
+2) 若可取得，提供上一章、下一章連結與章節目錄（至少數筆）。
+3) 只輸出 JSON。`;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          content: { type: Type.STRING },
+          sourceUrl: { type: Type.STRING },
+          nextChapterUrl: { type: Type.STRING },
+          prevChapterUrl: { type: Type.STRING },
+          chapters: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                url: { type: Type.STRING }
+              }
+            }
+          }
+        },
+        required: ["title", "content"]
+      }
+    }
+  });
+
+  const raw = response.text?.trim();
+  if (!raw) {
+    throw new Error('關鍵字搜尋未取得內容，請改用完整章節網址。');
+  }
+  const data = JSON.parse(raw);
+  const content = (data.content || '').trim();
+  if (!content) {
+    throw new Error('關鍵字搜尋未取得章節正文，請改用完整章節網址。');
+  }
+  return {
+    title: data.title || keyword,
+    content,
+    sourceUrl: data.sourceUrl,
+    nextChapterUrl: data.nextChapterUrl,
+    prevChapterUrl: data.prevChapterUrl,
+    chapters: Array.isArray(data.chapters) ? data.chapters : [],
+    groundingSources: response.candidates?.[0]?.groundingMetadata?.groundingChunks
+  };
+};
+
 // 驗證 URL 並嘗試從後端取得正文（若後端可用）
 export const fetchNovelContent = async (input: string, currentTitle?: string): Promise<NovelContent> => {
   try {
-    let url = input.trim();
+    const originalInput = input.trim();
+    if (!originalInput) throw new Error('請輸入書名或網址');
+    if (!isLikelyUrlInput(originalInput)) {
+      return await fetchNovelByKeyword(originalInput);
+    }
+
+    let url = originalInput;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'https://' + url;
     }
