@@ -1034,7 +1034,8 @@ const App: React.FC = () => {
                 onChange={(e) => setWebText(e.target.value)}
                 placeholder="在此貼上小說內容，或從側邊欄使用「網址抓取」..."
                 style={{ 
-                  fontSize: `${fontSize}px`
+                  fontSize: `${fontSize}px`,
+                  paddingBottom: '42vh'
                 }}
                 className={`relative z-20 w-full h-[76vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
               />
