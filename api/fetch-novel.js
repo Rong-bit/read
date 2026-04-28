@@ -26,6 +26,8 @@ const toAbsoluteUrl = (href, baseUrl) => {
 
 const normalizeText = (text) => (text || '').replace(/\s+/g, ' ').trim();
 
+const chapterTitleLike = (title) => /(第.{0,20}[章节回卷部集]|章|回|節)/i.test(title);
+
 const extractNavigationAndChapters = ($, pageUrl) => {
   let nextChapterUrl;
   let prevChapterUrl;
@@ -59,6 +61,37 @@ const extractNavigationAndChapters = ($, pageUrl) => {
     nextChapterUrl,
     chapters: chapters.slice(0, 500)
   };
+};
+
+const findCatalogUrl = ($, pageUrl) => {
+  let catalogUrl = null;
+  const catalogRegex = /(目录|目錄|全部章节|全部章節|章节列表|章節列表|list|catalog)/i;
+  $('a[href]').each((_, el) => {
+    if (catalogUrl) return;
+    const $a = $(el);
+    const title = normalizeText($a.text());
+    const href = $a.attr('href') || '';
+    if (!title && !href) return;
+    if (!catalogRegex.test(title) && !catalogRegex.test(href)) return;
+    const abs = toAbsoluteUrl(href, pageUrl);
+    if (abs) catalogUrl = abs;
+  });
+  return catalogUrl;
+};
+
+const extractChapterListFromPage = ($, pageUrl) => {
+  const chapters = [];
+  const seen = new Set();
+  $('a[href]').each((_, el) => {
+    const $a = $(el);
+    const title = normalizeText($a.text());
+    if (!title || !chapterTitleLike(title)) return;
+    const url = toAbsoluteUrl($a.attr('href'), pageUrl);
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    chapters.push({ title: title.slice(0, 80), url });
+  });
+  return chapters.slice(0, 2000);
 };
 
 const extractContent = ($, url) => {
@@ -220,6 +253,33 @@ const fetchWithCheerio = async (url) => {
   if (!result || result.content.length < 200) {
     throw new Error(`無法從網頁中提取足夠的小說內容（僅提取到 ${result?.content.length || 0} 字）`);
   }
+
+  // 部分站點的章節頁只提供上一章/下一章，需進目錄頁補抓完整章節清單。
+  if (!result.chapters || result.chapters.length <= 2) {
+    const catalogUrl = findCatalogUrl($, url);
+    if (catalogUrl) {
+      try {
+        const tocResponse = await fetch(catalogUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8'
+          }
+        });
+        if (tocResponse.ok) {
+          const tocHtml = await tocResponse.text();
+          const $toc = cheerio.load(tocHtml);
+          const fullChapters = extractChapterListFromPage($toc, catalogUrl);
+          if (fullChapters.length > (result.chapters?.length || 0)) {
+            result.chapters = fullChapters;
+          }
+        }
+      } catch {
+        // 目錄補抓失敗不影響正文回傳
+      }
+    }
+  }
+
   return result;
 };
 
