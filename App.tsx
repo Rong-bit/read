@@ -11,6 +11,7 @@ const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
 const STORAGE_KEY_WEB_RATE = 'web_reader_rate';
 const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
+const SPEED_PRESETS = [0.75, 1, 1.25, 1.5] as const;
 type BookmarkData = {
   id: string;
   title: string;
@@ -20,6 +21,13 @@ type BookmarkData = {
   savedAt: number;
 };
 const s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' });
+
+const normalizePlaybackRate = (value: number): number => {
+  if (!Number.isFinite(value)) return 1;
+  return SPEED_PRESETS.reduce((closest, current) => (
+    Math.abs(current - value) < Math.abs(closest - value) ? current : closest
+  ), SPEED_PRESETS[0]);
+};
 
 function splitTextForTTS(text: string, maxCharsPerSegment: number = 1200): string[] {
   const trimmed = text.trim();
@@ -154,7 +162,9 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   onNewSearch,
   onConvertToTraditional,
   onOpenUrlModal,
-  currentNovelTitle
+  currentNovelTitle,
+  webRate = 1,
+  setWebRate
 }) => (
   <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900/95 border-l border-white/15 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
     <div className="p-4 border-b border-white/15 flex items-center justify-between">
@@ -168,6 +178,20 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onConvertToTraditional?.(); onClose(); }}>簡轉繁</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
+      <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
+        <div className="text-xs text-slate-300 mb-2">播放速度</div>
+        <div className="grid grid-cols-4 gap-2">
+          {SPEED_PRESETS.map((speed) => (
+            <button
+              key={speed}
+              className={`py-2 rounded-md text-sm font-semibold border ${webRate === speed ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-slate-700 text-slate-100 border-white/20 hover:bg-slate-600'}`}
+              onClick={() => setWebRate?.(speed)}
+            >
+              {speed}x
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   </div>
 );
@@ -226,6 +250,9 @@ const App: React.FC = () => {
     charStart: number;
     charEnd: number;
   } | null>(null);
+  const novelRef = useRef<NovelContent | null>(null);
+  const autoAdvanceInFlightRef = useRef(false);
+  const shouldAutoplayAfterSearchRef = useRef(false);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
   const [readingLineViewportY, setReadingLineViewportY] = useState<number | null>(null);
   const [readingLineHeight, setReadingLineHeight] = useState<number>(36);
@@ -312,6 +339,10 @@ const App: React.FC = () => {
   }, [readingCharIndex, fontSize]);
 
   useEffect(() => {
+    novelRef.current = novel;
+  }, [novel]);
+
+  useEffect(() => {
     const savedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
     if (savedSettings) {
       const s = JSON.parse(savedSettings);
@@ -322,7 +353,7 @@ const App: React.FC = () => {
       setTheme(s.theme || 'dark');
     }
     const savedWebRate = localStorage.getItem(STORAGE_KEY_WEB_RATE);
-    if (savedWebRate) setWebRate(parseFloat(savedWebRate));
+    if (savedWebRate) setWebRate(normalizePlaybackRate(parseFloat(savedWebRate)));
     const savedUseAi = localStorage.getItem(STORAGE_KEY_USE_AI_READING);
     if (savedUseAi === 'true') setUseAiReading(true);
     else if (savedUseAi === 'false') setUseAiReading(false);
@@ -355,6 +386,15 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_USE_AI_READING, useAiReading ? 'true' : 'false');
   }, [useAiReading]);
+
+  useEffect(() => {
+    const normalized = normalizePlaybackRate(webRate);
+    if (normalized !== webRate) {
+      setWebRate(normalized);
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY_WEB_RATE, String(normalized));
+  }, [webRate]);
 
   useEffect(() => {
     const pending = pendingRestoreRef.current;
@@ -396,6 +436,23 @@ const App: React.FC = () => {
       setWebError(err.message || "載入失敗。");
     } finally {
       setWebLoading(false);
+    }
+  };
+
+  const tryAutoAdvanceToNextChapter = async (): Promise<boolean> => {
+    const nextUrl = novelRef.current?.nextChapterUrl;
+    if (!nextUrl) return false;
+    if (autoAdvanceInFlightRef.current) return true;
+    autoAdvanceInFlightRef.current = true;
+    shouldAutoplayAfterSearchRef.current = true;
+    try {
+      await handleSearch(nextUrl);
+      return true;
+    } catch {
+      shouldAutoplayAfterSearchRef.current = false;
+      return false;
+    } finally {
+      autoAdvanceInFlightRef.current = false;
     }
   };
 
@@ -476,7 +533,10 @@ const App: React.FC = () => {
       if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
       setWebIsSpeaking(false);
       setWebIsPaused(false);
-      setReadingCharIndex(null);
+      void (async () => {
+        const moved = await tryAutoAdvanceToNextChapter();
+        if (!moved) setReadingCharIndex(null);
+      })();
     };
     utterance.onerror = () => handleWebStop();
     window.speechSynthesis.speak(utterance);
@@ -513,7 +573,12 @@ const App: React.FC = () => {
       if (ctx.state === 'suspended') await ctx.resume();
       webAiPlayingRef.current = true;
       const playNextSegment = async (index: number) => {
-        if (!webAiPlayingRef.current || index >= segments.length) { handleWebStop(); return; }
+        if (!webAiPlayingRef.current) { handleWebStop(); return; }
+        if (index >= segments.length) {
+          const moved = await tryAutoAdvanceToNextChapter();
+          if (!moved) handleWebStop();
+          return;
+        }
         stopAiProgressLoop();
         try {
           const currentSegment = segments[index];
@@ -523,6 +588,7 @@ const App: React.FC = () => {
             aiPlaybackModeRef.current = 'htmlaudio';
             const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
             const audio = new Audio(objectUrl);
+            audio.playbackRate = webRate;
             htmlAudioRef.current = audio;
             audio.onended = () => {
               htmlAudioRef.current = null;
@@ -539,6 +605,7 @@ const App: React.FC = () => {
             aiPlaybackModeRef.current = 'webaudio';
             const source = ctx.createBufferSource();
             source.buffer = audioBuffer;
+            source.playbackRate.value = webRate;
             const gainNode = ctx.createGain();
             source.connect(gainNode);
             gainNode.connect(ctx.destination);
@@ -562,7 +629,7 @@ const App: React.FC = () => {
             aiSegmentProgressRef.current = {
               ctx,
               startCtxTime: ctx.currentTime,
-              duration: audioBuffer.duration,
+              duration: audioBuffer.duration / Math.max(0.1, webRate),
               charStart: offset + currentSegment.start,
               charEnd: offset + currentSegment.end,
             };
@@ -576,6 +643,7 @@ const App: React.FC = () => {
           stopAiProgressLoop();
           sourceRef.current = null;
           setWebAiLoading(false);
+          showToast('AI 朗讀不可用，已自動切換為系統語音');
           console.warn('AI 朗讀失敗，已自動切換系統朗讀', e);
           startBrowserSpeech(fullText, offset, text);
         }
@@ -600,6 +668,13 @@ const App: React.FC = () => {
     setWebIsSpeaking(false); setWebIsPaused(false); setWebAiLoading(false);
     setReadingCharIndex(null);
   };
+
+  useEffect(() => {
+    if (!shouldAutoplayAfterSearchRef.current) return;
+    shouldAutoplayAfterSearchRef.current = false;
+    if (!webText.trim()) return;
+    void handleWebPlayPause();
+  }, [webText]);
 
   const getThemeClass = () => {
     switch(theme) {
