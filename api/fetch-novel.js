@@ -14,8 +14,56 @@ const normalizeUrl = (input) => {
   }
 };
 
+const toAbsoluteUrl = (href, baseUrl) => {
+  const raw = (href || '').trim();
+  if (!raw || raw.startsWith('javascript:') || raw.startsWith('#')) return null;
+  try {
+    return new URL(raw, baseUrl).toString();
+  } catch {
+    return null;
+  }
+};
+
+const normalizeText = (text) => (text || '').replace(/\s+/g, ' ').trim();
+
+const extractNavigationAndChapters = ($, pageUrl) => {
+  let nextChapterUrl;
+  let prevChapterUrl;
+  const chapters = [];
+  const seen = new Set();
+
+  const navRegex = {
+    next: /(下一[章页]|下[一1]章|下一节|下一回|下一頁|next)/i,
+    prev: /(上一[章页]|上[一1]章|上一节|上一回|上一頁|prev)/i,
+    chapter: /(第.{0,15}[章节回卷部集]|章|回|節)/i
+  };
+
+  $('a[href]').each((_, el) => {
+    const $a = $(el);
+    const title = normalizeText($a.text());
+    const href = toAbsoluteUrl($a.attr('href'), pageUrl);
+    if (!href || !title) return;
+
+    if (!prevChapterUrl && navRegex.prev.test(title)) prevChapterUrl = href;
+    if (!nextChapterUrl && navRegex.next.test(title)) nextChapterUrl = href;
+
+    if (!navRegex.chapter.test(title)) return;
+    if (title.includes('目錄') || title.includes('返回') || title.includes('首页') || title.includes('首頁')) return;
+    if (seen.has(href)) return;
+    seen.add(href);
+    chapters.push({ title: title.slice(0, 80), url: href });
+  });
+
+  return {
+    prevChapterUrl,
+    nextChapterUrl,
+    chapters: chapters.slice(0, 500)
+  };
+};
+
 const extractContent = ($, url) => {
   const urlLower = url.toLowerCase();
+  const navigation = extractNavigationAndChapters($, url);
 
   if (urlLower.includes('fanqienovel.com') || urlLower.includes('fanqie')) {
     const title = $('h1.chapter-title, .chapter-title, h1').first().text().trim() ||
@@ -27,7 +75,7 @@ const extractContent = ($, url) => {
       .get()
       .filter(text => text.length > 0)
       .join('\n\n');
-    if (content.length > 100) return { title, content, sourceUrl: url };
+    if (content.length > 100) return { title, content, sourceUrl: url, ...navigation };
   }
 
   if (urlLower.includes('qidian.com')) {
@@ -40,7 +88,7 @@ const extractContent = ($, url) => {
       .get()
       .filter(text => text.length > 0)
       .join('\n\n');
-    if (content.length > 100) return { title, content, sourceUrl: url };
+    if (content.length > 100) return { title, content, sourceUrl: url, ...navigation };
   }
 
   if (urlLower.includes('jjwxc.net') || urlLower.includes('jjwxc')) {
@@ -53,7 +101,7 @@ const extractContent = ($, url) => {
       .get()
       .filter(text => text.length > 0 && !text.includes('晉江'))
       .join('\n\n');
-    if (content.length > 100) return { title, content, sourceUrl: url };
+    if (content.length > 100) return { title, content, sourceUrl: url, ...navigation };
   }
 
   if (urlLower.includes('zongheng.com')) {
@@ -66,7 +114,7 @@ const extractContent = ($, url) => {
       .get()
       .filter(text => text.length > 0)
       .join('\n\n');
-    if (content.length > 100) return { title, content, sourceUrl: url };
+    if (content.length > 100) return { title, content, sourceUrl: url, ...navigation };
   }
 
   if (urlLower.includes('hjwzw.com')) {
@@ -79,7 +127,7 @@ const extractContent = ($, url) => {
         .get()
         .filter(t => t.length > 5 && !t.includes('請記住本站域名'))
         .join('\n\n');
-      if (content.length > 100) return { title, content, sourceUrl: url };
+      if (content.length > 100) return { title, content, sourceUrl: url, ...navigation };
     }
   }
 
@@ -96,7 +144,7 @@ const extractContent = ($, url) => {
         .get()
         .filter(text => text.length > 0 && !text.includes('溫馨提示'))
         .join('\n\n');
-      if (content.length > 100) return { title, content, sourceUrl: url };
+      if (content.length > 100) return { title, content, sourceUrl: url, ...navigation };
     }
   }
 
@@ -129,7 +177,7 @@ const extractContent = ($, url) => {
                  !textLower.includes('下一章');
         })
         .join('\n\n');
-      if (content.length > 200) return { title, content, sourceUrl: url };
+      if (content.length > 200) return { title, content, sourceUrl: url, ...navigation };
     }
   }
 
@@ -149,7 +197,7 @@ const extractContent = ($, url) => {
 
   if (paragraphs.length > 3) {
     const content = paragraphs.join('\n\n');
-    if (content.length > 200) return { title, content, sourceUrl: url };
+    if (content.length > 200) return { title, content, sourceUrl: url, ...navigation };
   }
 
   return null;
@@ -213,7 +261,14 @@ export default async function handler(req, res) {
   try {
     const result = await fetchWithCheerio(url);
     const title = result.title || titleOverride || '小說閱讀';
-    res.status(200).json({ title, content: result.content, sourceUrl: url });
+    res.status(200).json({
+      title,
+      content: result.content,
+      sourceUrl: url,
+      nextChapterUrl: result.nextChapterUrl,
+      prevChapterUrl: result.prevChapterUrl,
+      chapters: result.chapters
+    });
   } catch (error) {
     res.status(500).json({ error: error?.message || '抓取失敗' });
   }
