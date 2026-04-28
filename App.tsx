@@ -191,6 +191,7 @@ const App: React.FC = () => {
   const webTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const boundaryTickRef = useRef<number | null>(null);
   const ttsStartAtRef = useRef<number>(0);
+  const hasBoundaryEventRef = useRef<boolean>(false);
   const lastAutoScrollAtRef = useRef<number>(0);
   const aiProgressRafRef = useRef<number | null>(null);
   const aiSegmentProgressRef = useRef<{
@@ -371,10 +372,12 @@ const App: React.FC = () => {
         setWebIsPaused(false);
         setReadingCharIndex(offset);
         ttsStartAtRef.current = Date.now();
+        hasBoundaryEventRef.current = false;
         if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
         // 部分瀏覽器/語音不會穩定觸發 onboundary，使用時間估算做備援同步。
         boundaryTickRef.current = window.setInterval(() => {
           if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
+          if (hasBoundaryEventRef.current) return; // 一旦有 boundary 事件，改用事件同步，避免雙來源抖動
           const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
           const charsPerSec = Math.max(4, 8 * webRate);
           const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
@@ -386,7 +389,13 @@ const App: React.FC = () => {
         }, 180);
       };
       utterance.onboundary = (event: SpeechSynthesisEvent) => {
-        if (typeof event.charIndex === 'number') setReadingCharIndex(offset + event.charIndex);
+        if (typeof event.charIndex !== 'number') return;
+        hasBoundaryEventRef.current = true;
+        const next = Math.min(fullText.length, offset + event.charIndex);
+        setReadingCharIndex((prev) => {
+          if (prev === null) return next;
+          return Math.max(prev, next); // 防止某些語音引擎偶發回退索引造成跳動
+        });
       };
       utterance.onend = () => {
         if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
