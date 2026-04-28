@@ -344,6 +344,51 @@ const App: React.FC = () => {
     }
   };
 
+  const startBrowserSpeech = (fullText: string, offset: number, text: string) => {
+    handleWebStop();
+    const utterance = new SpeechSynthesisUtterance(text);
+    if (webVoice) { const selectedVoice = webVoices.find(v => v.name === webVoice); if (selectedVoice) utterance.voice = selectedVoice; }
+    utterance.rate = webRate;
+    utterance.onstart = () => {
+      setWebIsSpeaking(true);
+      setWebIsPaused(false);
+      setReadingCharIndex(offset);
+      ttsStartAtRef.current = Date.now();
+      hasBoundaryEventRef.current = false;
+      if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
+      // 部分瀏覽器/語音不會穩定觸發 onboundary，使用時間估算做備援同步。
+      boundaryTickRef.current = window.setInterval(() => {
+        if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
+        if (hasBoundaryEventRef.current) return; // 一旦有 boundary 事件，改用事件同步，避免雙來源抖動
+        const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
+        const charsPerSec = Math.max(4, 8 * webRate);
+        const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
+        setReadingCharIndex((prev) => {
+          const next = Math.min(fullText.length, offset + estimatedIndex);
+          if (prev === null) return next;
+          return Math.max(prev, next);
+        });
+      }, 180);
+    };
+    utterance.onboundary = (event: SpeechSynthesisEvent) => {
+      if (typeof event.charIndex !== 'number') return;
+      hasBoundaryEventRef.current = true;
+      const next = Math.min(fullText.length, offset + event.charIndex);
+      setReadingCharIndex((prev) => {
+        if (prev === null) return next;
+        return Math.max(prev, next); // 防止某些語音引擎偶發回退索引造成跳動
+      });
+    };
+    utterance.onend = () => {
+      if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
+      setWebIsSpeaking(false);
+      setWebIsPaused(false);
+      setReadingCharIndex(null);
+    };
+    utterance.onerror = () => handleWebStop();
+    window.speechSynthesis.speak(utterance);
+  };
+
   const handleWebPlayPause = async () => {
     const fullText = webText;
     if (!fullText.trim()) return;
@@ -394,55 +439,18 @@ const App: React.FC = () => {
           startAiProgressLoop();
           setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
         } catch (e: any) {
-          const msg = e?.message ? `AI 朗讀出錯：${e.message}` : "AI 朗讀出錯。";
+          const msg = e?.message ? `AI 朗讀失敗，已切換系統朗讀：${e.message}` : "AI 朗讀失敗，已切換系統朗讀。";
           setWebError(msg);
-          handleWebStop();
+          webAiPlayingRef.current = false;
+          stopAiProgressLoop();
+          sourceRef.current = null;
+          setWebAiLoading(false);
+          startBrowserSpeech(fullText, offset, text);
         }
       };
       playNextSegment(0);
     } else {
-      handleWebStop();
-      const utterance = new SpeechSynthesisUtterance(text);
-      if (webVoice) { const selectedVoice = webVoices.find(v => v.name === webVoice); if (selectedVoice) utterance.voice = selectedVoice; }
-      utterance.rate = webRate;
-      utterance.onstart = () => {
-        setWebIsSpeaking(true);
-        setWebIsPaused(false);
-        setReadingCharIndex(offset);
-        ttsStartAtRef.current = Date.now();
-        hasBoundaryEventRef.current = false;
-        if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
-        // 部分瀏覽器/語音不會穩定觸發 onboundary，使用時間估算做備援同步。
-        boundaryTickRef.current = window.setInterval(() => {
-          if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
-          if (hasBoundaryEventRef.current) return; // 一旦有 boundary 事件，改用事件同步，避免雙來源抖動
-          const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
-          const charsPerSec = Math.max(4, 8 * webRate);
-          const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
-          setReadingCharIndex((prev) => {
-            const next = Math.min(fullText.length, offset + estimatedIndex);
-            if (prev === null) return next;
-            return Math.max(prev, next);
-          });
-        }, 180);
-      };
-      utterance.onboundary = (event: SpeechSynthesisEvent) => {
-        if (typeof event.charIndex !== 'number') return;
-        hasBoundaryEventRef.current = true;
-        const next = Math.min(fullText.length, offset + event.charIndex);
-        setReadingCharIndex((prev) => {
-          if (prev === null) return next;
-          return Math.max(prev, next); // 防止某些語音引擎偶發回退索引造成跳動
-        });
-      };
-      utterance.onend = () => {
-        if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
-        setWebIsSpeaking(false);
-        setWebIsPaused(false);
-        setReadingCharIndex(null);
-      };
-      utterance.onerror = () => handleWebStop();
-      window.speechSynthesis.speak(utterance);
+      startBrowserSpeech(fullText, offset, text);
     }
   };
 
