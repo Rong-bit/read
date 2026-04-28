@@ -7,6 +7,19 @@ const cors = (res) => {
   res.setHeader('Access-Control-Max-Age', '86400');
 };
 
+const parseElevenLabsError = (rawText) => {
+  try {
+    const payload = JSON.parse(rawText);
+    const detail = payload?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail.trim();
+    if (detail?.message) return String(detail.message);
+    if (payload?.error) return String(payload.error);
+    return rawText || 'ElevenLabs 回傳未知錯誤';
+  } catch {
+    return rawText || 'ElevenLabs 回傳未知錯誤';
+  }
+};
+
 export default async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') {
@@ -20,6 +33,7 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
   const defaultVoiceId = process.env.ELEVENLABS_VOICE_ID?.trim() || 'EXAVITQu4vr4xnSDxMaL';
+  const modelId = process.env.ELEVENLABS_MODEL_ID?.trim() || 'eleven_v3';
   if (!apiKey) {
     res.status(500).json({ error: '伺服器缺少 ELEVENLABS_API_KEY' });
     return;
@@ -51,7 +65,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         text,
-        model_id: 'eleven_multilingual_v2',
+        model_id: modelId,
         output_format: 'pcm_24000',
         voice_settings: {
           stability: 0.45,
@@ -62,7 +76,8 @@ export default async function handler(req, res) {
 
     if (!ttsRes.ok) {
       const errText = await ttsRes.text();
-      res.status(ttsRes.status).json({ error: errText || 'ElevenLabs TTS 失敗' });
+      const parsed = parseElevenLabsError(errText);
+      res.status(ttsRes.status).json({ error: `ElevenLabs TTS 失敗：${parsed}` });
       return;
     }
 
