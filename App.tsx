@@ -521,19 +521,14 @@ const App: React.FC = () => {
           const base64Audio = await generateSpeech(currentSegment.text, 'Kore');
           try {
             aiPlaybackModeRef.current = 'htmlaudio';
-            const bytes = decode(base64Audio);
-            const byteBuffer = bytes.slice().buffer as ArrayBuffer;
-            const blob = new Blob([byteBuffer], { type: 'audio/mpeg' });
-            const objectUrl = URL.createObjectURL(blob);
+            const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
             const audio = new Audio(objectUrl);
             htmlAudioRef.current = audio;
             audio.onended = () => {
-              URL.revokeObjectURL(objectUrl);
               htmlAudioRef.current = null;
               if (webAiPlayingRef.current) playNextSegment(index + 1);
             };
             audio.onerror = () => {
-              URL.revokeObjectURL(objectUrl);
               htmlAudioRef.current = null;
               throw new Error('HTMLAudio 播放失敗');
             };
