@@ -243,9 +243,9 @@ const App: React.FC = () => {
     const viewportHeight = textarea.clientHeight || 600;
     const currentTop = textarea.scrollTop;
     const lineYInViewport = targetTop - currentTop;
-    const anchorRatio = 0.46; // 稍微偏上，視覺上更接近中央閱讀區
-    const safeTop = viewportHeight * 0.34;
-    const safeBottom = viewportHeight * 0.58;
+    const anchorRatio = 0.43; // 再往上微調，避免朗讀行視覺偏下
+    const safeTop = viewportHeight * 0.31;
+    const safeBottom = viewportHeight * 0.55;
     const now = Date.now();
     const minStepPx = Math.max(lineHeight * 0.7, 20); // 太小就忽略，避免抖動但保留校正能力
     const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
