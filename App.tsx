@@ -254,9 +254,9 @@ const App: React.FC = () => {
     const lineYInViewport = targetTop - currentTop;
     setReadingLineViewportY(Math.max(0, lineYInViewport));
     setReadingLineHeight(lineHeight);
-    const anchorRatio = 0.4; // 再上移一些，讓朗讀行更接近中上區
-    const safeTop = viewportHeight * 0.28;
-    const safeBottom = viewportHeight * 0.52;
+    const anchorRatio = 0.38; // 再微幅上移，避免視覺偏下
+    const safeTop = viewportHeight * 0.26;
+    const safeBottom = viewportHeight * 0.5;
     const now = Date.now();
     const minStepPx = Math.max(lineHeight * 0.7, 20); // 太小就忽略，避免抖動但保留校正能力
     const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
@@ -570,16 +570,16 @@ const App: React.FC = () => {
 
       <div className="fixed bottom-0 left-0 right-0 p-4 z-[100] bg-gradient-to-t from-black/80 via-black/40 to-transparent backdrop-blur-sm pointer-events-none">
         <div className="max-w-md mx-auto flex justify-center items-center gap-4 pointer-events-auto">
-          <button onClick={() => novel?.prevChapterUrl && handleSearch(novel.prevChapterUrl)} disabled={!novel?.prevChapterUrl} className="p-3 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
+          <button onClick={() => novel?.prevChapterUrl && handleSearch(novel.prevChapterUrl)} disabled={!novel?.prevChapterUrl} className="p-3 bg-slate-700 text-slate-50 border border-white/20 rounded-full disabled:opacity-30 hover:bg-slate-600 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
           <button onClick={handleWebPlayPause} className="p-3 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl hover:scale-105 active:scale-95 transition-all">
             {webAiLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (webIsSpeaking && !webIsPaused ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="4" height="16" x="6" y="4" rx="1"/><rect width="4" height="16" x="14" y="4" rx="1"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5"><path d="m7 4 12 8-12 8V4z"/></svg>)}
           </button>
-          <button onClick={handleWebStop} className="p-3 bg-slate-900/80 border border-white/5 rounded-full flex items-center justify-center hover:bg-slate-800 transition-all shadow-lg">
+          <button onClick={handleWebStop} className="p-3 bg-rose-600 text-white border border-rose-300/40 rounded-full flex items-center justify-center hover:bg-rose-500 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
           </button>
-          <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
+          <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-700 text-slate-50 border border-white/20 rounded-full disabled:opacity-30 hover:bg-slate-600 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </button>
         </div>
