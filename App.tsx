@@ -243,8 +243,9 @@ const App: React.FC = () => {
     const viewportHeight = textarea.clientHeight || 600;
     const currentTop = textarea.scrollTop;
     const lineYInViewport = targetTop - currentTop;
-    const safeTop = viewportHeight * 0.35;
-    const safeBottom = viewportHeight * 0.65;
+    const anchorRatio = 0.46; // 稍微偏上，視覺上更接近中央閱讀區
+    const safeTop = viewportHeight * 0.34;
+    const safeBottom = viewportHeight * 0.58;
     const now = Date.now();
     const minStepPx = Math.max(lineHeight * 0.7, 20); // 太小就忽略，避免抖動但保留校正能力
     const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
@@ -252,7 +253,7 @@ const App: React.FC = () => {
     // 朗讀行仍在中央安全區就不捲動，避免視覺抖動。
     if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
     if (now - lastAutoScrollAtRef.current < throttleMs) return;
-    const desiredTop = Math.max(0, targetTop - viewportHeight * 0.5);
+    const desiredTop = Math.max(0, targetTop - viewportHeight * anchorRatio);
     const nextTop = desiredTop;
     if (Math.abs(nextTop - currentTop) < minStepPx) return;
 
