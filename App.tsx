@@ -90,7 +90,7 @@ const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu, title }) => (
     <div className="max-w-[70%] text-base md:text-lg font-bold truncate text-slate-100 text-center">
       {title || '未命名章節'}
     </div>
-    <button onClick={onToggleMenu} className="absolute right-4 md:right-6 px-3 py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700/70 shrink-0">
+    <button onClick={onToggleMenu} className="absolute right-4 md:right-6 px-3 py-2 rounded-lg bg-slate-700 text-slate-50 font-semibold border border-white/20 hover:bg-slate-600 shrink-0">
       選單
     </button>
   </header>
@@ -151,10 +151,10 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
     </div>
     <div className="p-4 space-y-3">
       {currentNovelTitle ? <div className="text-sm text-slate-100/95 truncate font-medium">{currentNovelTitle}</div> : null}
-      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onNewSearch(); onClose(); }}>新搜尋</button>
-      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
-      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
-      <button className="w-full text-left p-3 bg-slate-700/80 text-slate-100 rounded-lg font-semibold hover:bg-slate-600/85" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
+      <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onNewSearch(); onClose(); }}>新搜尋</button>
+      <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
+      <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
+      <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
     </div>
   </div>
 );
@@ -573,11 +573,11 @@ const App: React.FC = () => {
           <button onClick={() => novel?.prevChapterUrl && handleSearch(novel.prevChapterUrl)} disabled={!novel?.prevChapterUrl} className="p-3 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
-          <button onClick={handleWebPlayPause} className="w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl hover:scale-105 active:scale-95 transition-all">
-            {webAiLoading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (webIsSpeaking && !webIsPaused ? <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect width="4" height="16" x="6" y="4" rx="1"/><rect width="4" height="16" x="14" y="4" rx="1"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5"><path d="m7 4 12 8-12 8V4z"/></svg>)}
+          <button onClick={handleWebPlayPause} className="p-3 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl hover:scale-105 active:scale-95 transition-all">
+            {webAiLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (webIsSpeaking && !webIsPaused ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="4" height="16" x="6" y="4" rx="1"/><rect width="4" height="16" x="14" y="4" rx="1"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5"><path d="m7 4 12 8-12 8V4z"/></svg>)}
           </button>
-          <button onClick={handleWebStop} className="w-14 h-14 bg-slate-900/80 border border-white/5 rounded-full flex items-center justify-center hover:bg-slate-800 transition-all shadow-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
+          <button onClick={handleWebStop} className="p-3 bg-slate-900/80 border border-white/5 rounded-full flex items-center justify-center hover:bg-slate-800 transition-all shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
           </button>
           <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
