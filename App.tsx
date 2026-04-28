@@ -44,6 +44,42 @@ function splitTextForTTSWithRanges(text: string, maxCharsPerSegment: number = 12
   return ranges;
 }
 
+/** 依與 textarea 相同的斷行與字體量測字元在可捲動內容中的垂直位置（含自動換行，非僅 \\n） */
+function getScrollContentOffsetTopForCharIndex(textarea: HTMLTextAreaElement, charIndex: number): number {
+  const text = textarea.value;
+  const i = Math.max(0, Math.min(charIndex, text.length));
+  const div = document.createElement('div');
+  const cs = window.getComputedStyle(textarea);
+  div.style.position = 'absolute';
+  div.style.left = '-99999px';
+  div.style.top = '0';
+  div.style.visibility = 'hidden';
+  div.style.whiteSpace = 'pre-wrap';
+  div.style.wordWrap = 'break-word';
+  div.style.overflow = 'hidden';
+  div.style.width = `${textarea.clientWidth}px`;
+  div.style.boxSizing = cs.boxSizing || 'border-box';
+  div.style.padding = cs.padding;
+  div.style.border = cs.border;
+  div.style.font = cs.font;
+  div.style.fontSize = cs.fontSize;
+  div.style.fontFamily = cs.fontFamily;
+  div.style.fontWeight = cs.fontWeight;
+  div.style.fontStyle = cs.fontStyle;
+  div.style.letterSpacing = cs.letterSpacing;
+  div.style.lineHeight = cs.lineHeight;
+
+  div.textContent = text.slice(0, i);
+  const marker = document.createElement('span');
+  marker.textContent = i < text.length ? text.slice(i, i + 1) : '\u200b';
+  div.appendChild(marker);
+
+  document.body.appendChild(div);
+  const top = marker.offsetTop;
+  document.body.removeChild(div);
+  return top;
+}
+
 type LocalHeaderProps = {
   onToggleMenu: () => void;
 };
@@ -156,17 +192,53 @@ const App: React.FC = () => {
   const boundaryTickRef = useRef<number | null>(null);
   const ttsStartAtRef = useRef<number>(0);
   const lastAutoScrollAtRef = useRef<number>(0);
+  const aiProgressRafRef = useRef<number | null>(null);
+  const aiSegmentProgressRef = useRef<{
+    ctx: AudioContext;
+    startCtxTime: number;
+    duration: number;
+    charStart: number;
+    charEnd: number;
+  } | null>(null);
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
+
+  const stopAiProgressLoop = () => {
+    if (aiProgressRafRef.current !== null) {
+      cancelAnimationFrame(aiProgressRafRef.current);
+      aiProgressRafRef.current = null;
+    }
+    aiSegmentProgressRef.current = null;
+  };
+
+  const startAiProgressLoop = () => {
+    const tick = () => {
+      const meta = aiSegmentProgressRef.current;
+      if (!meta || !webAiPlayingRef.current) return;
+      if (meta.ctx.state !== 'running' && meta.ctx.state !== 'closed') {
+        aiProgressRafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      const elapsed = meta.ctx.currentTime - meta.startCtxTime;
+      const progress = meta.duration > 0 ? Math.min(1, Math.max(0, elapsed / meta.duration)) : 1;
+      const span = meta.charEnd - meta.charStart;
+      let idx: number;
+      if (span <= 1) idx = meta.charStart;
+      else idx = meta.charStart + Math.min(span - 1, Math.floor(progress * span));
+      setReadingCharIndex(idx);
+      aiProgressRafRef.current = requestAnimationFrame(tick);
+    };
+    if (aiProgressRafRef.current !== null) cancelAnimationFrame(aiProgressRafRef.current);
+    aiProgressRafRef.current = requestAnimationFrame(tick);
+  };
 
   const syncReadingPosition = (charIndex: number | null) => {
     const textarea = webTextareaRef.current;
     if (!textarea || charIndex === null) return;
     const clamped = Math.max(0, Math.min(charIndex, textarea.value.length));
-    const lineNumber = textarea.value.slice(0, clamped).split('\n').length;
     const computed = window.getComputedStyle(textarea);
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
-    const targetTop = Math.max(0, (lineNumber - 1) * lineHeight);
+    const targetTop = Math.max(0, getScrollContentOffsetTopForCharIndex(textarea, clamped));
     const viewportHeight = textarea.clientHeight || 600;
     const currentTop = textarea.scrollTop;
     const lineYInViewport = targetTop - currentTop;
@@ -262,6 +334,7 @@ const App: React.FC = () => {
       webAiPlayingRef.current = true;
       const playNextSegment = async (index: number) => {
         if (!webAiPlayingRef.current || index >= segments.length) { handleWebStop(); return; }
+        stopAiProgressLoop();
         try {
           const currentSegment = segments[index];
           setReadingCharIndex(offset + currentSegment.start);
@@ -270,9 +343,20 @@ const App: React.FC = () => {
           const source = ctx.createBufferSource();
           source.buffer = audioBuffer;
           source.connect(ctx.destination);
-          source.onended = () => { if (webAiPlayingRef.current) playNextSegment(index + 1); };
+          source.onended = () => {
+            stopAiProgressLoop();
+            if (webAiPlayingRef.current) playNextSegment(index + 1);
+          };
           source.start(0);
           sourceRef.current = source;
+          aiSegmentProgressRef.current = {
+            ctx,
+            startCtxTime: ctx.currentTime,
+            duration: audioBuffer.duration,
+            charStart: offset + currentSegment.start,
+            charEnd: offset + currentSegment.end,
+          };
+          startAiProgressLoop();
           setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
         } catch (e) { setWebError("AI 朗讀出錯。"); handleWebStop(); }
       };
@@ -316,6 +400,7 @@ const App: React.FC = () => {
   };
 
   const handleWebStop = () => {
+    stopAiProgressLoop();
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
     if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
@@ -373,11 +458,11 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto pt-8 md:pt-12">
           <div className="space-y-8 pb-48">
             {(webTitle || novel?.title) && (
-              <header className="mb-10 text-center animate-fade-in-up">
-                <h2 className={`text-4xl md:text-6xl serif-font tracking-tight mb-4 ${getTitleClass()}`}>
+              <header className="mb-8 text-center animate-fade-in-up">
+                <h2 className={`text-2xl sm:text-3xl md:text-4xl serif-font tracking-tight mb-3 ${getTitleClass()}`}>
                   {webTitle || novel?.title}
                 </h2>
-                <div className={`w-24 h-1 mx-auto rounded-full ${getDividerClass()}`}></div>
+                <div className={`w-16 h-0.5 mx-auto rounded-full ${getDividerClass()}`}></div>
               </header>
             )}
 
@@ -401,19 +486,19 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 p-6 z-[100] bg-gradient-to-t from-black/80 via-black/40 to-transparent backdrop-blur-sm pointer-events-none">
-        <div className="max-w-md mx-auto flex justify-center items-center gap-6 pointer-events-auto">
-          <button onClick={() => novel?.prevChapterUrl && handleSearch(novel.prevChapterUrl)} disabled={!novel?.prevChapterUrl} className="p-4 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      <div className="fixed bottom-0 left-0 right-0 p-4 z-[100] bg-gradient-to-t from-black/80 via-black/40 to-transparent backdrop-blur-sm pointer-events-none">
+        <div className="max-w-md mx-auto flex justify-center items-center gap-4 pointer-events-auto">
+          <button onClick={() => novel?.prevChapterUrl && handleSearch(novel.prevChapterUrl)} disabled={!novel?.prevChapterUrl} className="p-3 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
-          <button onClick={handleWebPlayPause} className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-2xl hover:scale-105 active:scale-95 transition-all">
-            {webAiLoading ? <div className="w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin"></div> : (webIsSpeaking && !webIsPaused ? <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect width="4" height="16" x="6" y="4" rx="1"/><rect width="4" height="16" x="14" y="4" rx="1"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" className="ml-1"><path d="m7 4 12 8-12 8V4z"/></svg>)}
+          <button onClick={handleWebPlayPause} className="w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl hover:scale-105 active:scale-95 transition-all">
+            {webAiLoading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (webIsSpeaking && !webIsPaused ? <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect width="4" height="16" x="6" y="4" rx="1"/><rect width="4" height="16" x="14" y="4" rx="1"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5"><path d="m7 4 12 8-12 8V4z"/></svg>)}
           </button>
-          <button onClick={handleWebStop} className="p-4 bg-slate-900/80 border border-white/5 rounded-full hover:bg-slate-800 transition-all shadow-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
+          <button onClick={handleWebStop} className="p-3 bg-slate-900/80 border border-white/5 rounded-full hover:bg-slate-800 transition-all shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
           </button>
-          <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-4 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </button>
         </div>
       </div>
