@@ -12,33 +12,17 @@ export function decode(base64: string): Uint8Array {
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
+  _sampleRate: number,
+  _numChannels: number,
 ): Promise<AudioBuffer> {
-  // 先嘗試原生解碼（mp3/wav/aac...），最穩定；失敗時再回退到 raw PCM。
+  // ElevenLabs 路徑固定使用容器音訊（mp3/wav），僅走瀏覽器原生解碼，
+  // 避免誤把壓縮音訊當 PCM 解析而產生整段雜音。
   try {
     const copy = data.slice().buffer; // 避免 byteOffset 造成解碼錯位
     return await ctx.decodeAudioData(copy);
-  } catch {
-    // ignore and fallback to PCM below
+  } catch (err: any) {
+    throw new Error(err?.message || '無法解碼音訊資料');
   }
-
-  // Gemini TTS 回傳的是 16-bit LPCM (小端序)
-  // 每個樣本佔 2 bytes，因此長度必須是 2 的倍數
-  const bufferLength = Math.floor(data.byteLength / 2);
-  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, bufferLength);
-  
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      // 將 16-bit 整數縮放回 -1.0 到 1.0 的浮點數
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
 }
 
 export function encode(bytes: Uint8Array): string {
