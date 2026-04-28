@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { NovelContent } from "../types.ts";
 
 const resolveApiKey = (): string => {
@@ -23,6 +23,18 @@ const getFetchNovelApiUrl = (): string | null => {
     return '/api/fetch-novel';
   }
   return `${baseUrl.replace(/\/+$/, '')}/api/fetch-novel`;
+};
+
+const getTtsApiUrl = (): string => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  const fallbackGithubApiBase = 'https://read-kappa-two.vercel.app';
+  if (!baseUrl) {
+    if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
+      return `${fallbackGithubApiBase}/api/tts-elevenlabs`;
+    }
+    return '/api/tts-elevenlabs';
+  }
+  return `${baseUrl.replace(/\/+$/, '')}/api/tts-elevenlabs`;
 };
 
 const isLikelyUrlInput = (value: string): boolean => {
@@ -209,28 +221,25 @@ const extractTitleFromUrl = (url: string): string => {
   }
 };
 
-// Fix: Removed manual apiKey parameter as process.env.API_KEY must be used exclusively
 export const generateSpeech = async (
   text: string,
   voiceName: string = 'Kore'
 ): Promise<string> => {
-  const ai = getAI();
-  
-  // 長篇朗讀優化
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: `請朗讀以下小說正文，保持適當的語速與停頓：\n\n${text}` }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName },
-        },
-      },
-    },
+  const apiUrl = getTtsApiUrl();
+  const res = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      // 允許傳入 ElevenLabs voiceId；若不是合法 id，後端會忽略並回退預設語音
+      voiceId: /^[A-Za-z0-9_-]{10,}$/.test(voiceName) ? voiceName : undefined
+    })
   });
-
-  const base64Audio = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-  if (!base64Audio) throw new Error("語音合成失敗");
-  return base64Audio;
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`ElevenLabs TTS 失敗: ${errorText}`);
+  }
+  const data = await res.json();
+  if (!data.audioBase64) throw new Error('ElevenLabs 未回傳音訊');
+  return data.audioBase64 as string;
 };
