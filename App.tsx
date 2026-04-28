@@ -292,6 +292,18 @@ const App: React.FC = () => {
     }
     return raw || '載入失敗，請稍後再試。';
   };
+  const normalizeChapterUrl = (targetUrl?: string, baseUrl?: string): string | undefined => {
+    const raw = (targetUrl || '').trim();
+    if (!raw) return undefined;
+    if (/^https?:\/\//i.test(raw)) return raw;
+    const base = (baseUrl || '').trim();
+    if (!base) return undefined;
+    try {
+      return new URL(raw, base).toString();
+    } catch {
+      return undefined;
+    }
+  };
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
   const [readingLineViewportY, setReadingLineViewportY] = useState<number | null>(null);
   const [readingLineHeight, setReadingLineHeight] = useState<number>(36);
@@ -478,7 +490,21 @@ const App: React.FC = () => {
       setWebError(null);
       const data = await fetchNovelContent(input);
       const resolvedTitle = data.title?.trim() || deriveFallbackTitle(input, data.content || '');
-      setNovel({ ...data, title: resolvedTitle });
+      const resolvedSourceUrl = normalizeChapterUrl(data.sourceUrl, input) || data.sourceUrl;
+      const resolvedNovel: NovelContent = {
+        ...data,
+        title: resolvedTitle,
+        sourceUrl: resolvedSourceUrl,
+        nextChapterUrl: normalizeChapterUrl(data.nextChapterUrl, resolvedSourceUrl || input),
+        prevChapterUrl: normalizeChapterUrl(data.prevChapterUrl, resolvedSourceUrl || input),
+        chapters: Array.isArray(data.chapters)
+          ? data.chapters.map((ch) => ({
+              ...ch,
+              url: normalizeChapterUrl(ch.url, resolvedSourceUrl || input) || ch.url
+            }))
+          : data.chapters
+      };
+      setNovel(resolvedNovel);
       setIsChaptersOpen(false);
       setWebTitle(resolvedTitle);
       setWebText(data.content);
@@ -493,7 +519,10 @@ const App: React.FC = () => {
 
   const tryAutoAdvanceToNextChapter = async (): Promise<boolean> => {
     if (!autoNextChapter) return false;
-    const nextUrl = novelRef.current?.nextChapterUrl;
+    const nextUrl = normalizeChapterUrl(
+      novelRef.current?.nextChapterUrl,
+      novelRef.current?.sourceUrl
+    );
     if (!nextUrl) return false;
     if (autoAdvanceInFlightRef.current) return true;
     autoAdvanceInFlightRef.current = true;
