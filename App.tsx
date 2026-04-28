@@ -85,8 +85,7 @@ type LocalHeaderProps = {
 };
 
 const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu }) => (
-  <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
-    <h1 className="text-lg font-bold">Gemini 小說朗讀器</h1>
+  <header className="flex items-center justify-end px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
     <button onClick={onToggleMenu} className="px-3 py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700/70">
       選單
     </button>
@@ -167,7 +166,7 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBrowseOpen, setIsBrowseOpen] = useState(false);
   const [showSearch, setShowSearch] = useState(true);
-  const [fontSize, setFontSize] = useState(20);
+  const [fontSize, setFontSize] = useState(22);
   const [theme, setTheme] = useState<'dark' | 'sepia' | 'slate'>('dark');
   const [showResumeToast, setShowResumeToast] = useState(false);
 
@@ -293,7 +292,7 @@ const App: React.FC = () => {
       setVoice(s.voice || 'Kore');
       setVolume(s.volume ?? 0.8);
       setPlaybackRate(s.playbackRate ?? 0.8);
-      setFontSize(s.fontSize ?? 20);
+      setFontSize(s.fontSize ?? 22);
       setTheme(s.theme || 'dark');
     }
     const savedWebRate = localStorage.getItem(STORAGE_KEY_WEB_RATE);
@@ -497,7 +496,7 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 w-full px-4 md:px-12 lg:px-24">
-        <div className="max-w-7xl mx-auto pt-8 md:pt-12">
+        <div className="max-w-[90rem] mx-auto pt-6 md:pt-8">
           <div className="space-y-8 pb-48">
             {(webTitle || novel?.title) && (
               <header className="mb-8 text-center animate-fade-in-up">
@@ -532,7 +531,7 @@ const App: React.FC = () => {
                 style={{ 
                   fontSize: `${fontSize}px`
                 }}
-                className={`relative z-20 w-full h-[70vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
+                className={`relative z-20 w-full h-[76vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
               />
             </div>
           </div>
@@ -561,7 +560,7 @@ const App: React.FC = () => {
           <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-[2rem] p-8 shadow-2xl text-slate-100 animate-fade-in-up">
             <div className="flex justify-between items-center mb-8"><h2 className="text-2xl font-bold">閱讀偏好</h2><button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-white"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
             <div className="space-y-8">
-              <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">字體大小 ({fontSize}px)</label><input type="range" min="14" max="32" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
+              <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">字體大小 ({fontSize}px)</label><input type="range" min="16" max="40" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
               <div><label className="block text-sm font-bold text-slate-400 mb-4 uppercase tracking-widest">閱讀主題</label><div className="grid grid-cols-3 gap-3">{['dark', 'sepia', 'slate'].map(t => (<button key={t} onClick={() => {setTheme(t as any); setIsSettingsOpen(false);}} className={`py-4 rounded-2xl border transition-all font-bold ${theme === t ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-500'}`}>{t === 'dark' ? '深邃黑' : t === 'sepia' ? '羊皮紙' : '岩板灰'}</button>))}</div></div>
             </div>
           </div>
