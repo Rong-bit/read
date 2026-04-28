@@ -11,6 +11,7 @@ const STORAGE_KEY_PROGRESS = 'gemini_reader_progress';
 const STORAGE_KEY_WEB_RATE = 'web_reader_rate';
 const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
+const STORAGE_KEY_AUTO_NEXT = 'gemini_reader_auto_next';
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5] as const;
 type BookmarkData = {
   id: string;
@@ -152,6 +153,8 @@ type LocalSidebarProps = {
   webVoices?: SpeechSynthesisVoice[];
   useAiReading?: boolean;
   setUseAiReading?: (v: boolean) => void;
+  autoNextChapter?: boolean;
+  setAutoNextChapter?: (v: boolean) => void;
 };
 
 const Sidebar: React.FC<LocalSidebarProps> = ({
@@ -164,7 +167,9 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   onOpenUrlModal,
   currentNovelTitle,
   webRate = 1,
-  setWebRate
+  setWebRate,
+  autoNextChapter = true,
+  setAutoNextChapter
 }) => (
   <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900/95 border-l border-white/15 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
     <div className="p-4 border-b border-white/15 flex items-center justify-between">
@@ -178,6 +183,12 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onConvertToTraditional?.(); onClose(); }}>簡轉繁</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenSettings(); onClose(); }}>閱讀偏好</button>
+      <button
+        className={`w-full text-left p-3.5 rounded-lg text-base font-bold border ${autoNextChapter ? 'bg-emerald-600 text-white border-emerald-300/40 hover:bg-emerald-500' : 'bg-slate-700 text-slate-100 border-white/25 hover:bg-slate-600'}`}
+        onClick={() => setAutoNextChapter?.(!autoNextChapter)}
+      >
+        自動下一章：{autoNextChapter ? '開' : '關'}
+      </button>
       <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
         <div className="text-xs text-slate-300 mb-2">播放速度</div>
         <div className="grid grid-cols-4 gap-2">
@@ -225,6 +236,7 @@ const App: React.FC = () => {
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<'keyword' | 'url'>('keyword');
   const [useAiReading, setUseAiReading] = useState(true);
+  const [autoNextChapter, setAutoNextChapter] = useState(true);
   const [webAiLoading, setWebAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkData[]>([]);
@@ -254,6 +266,23 @@ const App: React.FC = () => {
   const autoAdvanceInFlightRef = useRef(false);
   const shouldAutoplayAfterSearchRef = useRef(false);
   const pendingBrowserSpeechRef = useRef<{ fullText: string; offset: number; text: string } | null>(null);
+
+  const getFriendlyError = (raw: string): string => {
+    const text = (raw || '').toLowerCase();
+    if (text.includes('quota') || text.includes('429') || text.includes('rate limit')) {
+      return 'AI 配額或請求頻率已達上限，請稍後重試或改用系統語音。';
+    }
+    if (text.includes('api key') || text.includes('401') || text.includes('403') || text.includes('unauthorized')) {
+      return 'AI 服務授權失敗，請檢查 API 金鑰設定。';
+    }
+    if (text.includes('網址') || text.includes('url') || text.includes('http')) {
+      return raw || '網址格式或內容解析失敗，請更換章節網址再試。';
+    }
+    if (text.includes('network') || text.includes('failed to fetch') || text.includes('timeout')) {
+      return '網路連線不穩，請檢查網路後重試。';
+    }
+    return raw || '載入失敗，請稍後再試。';
+  };
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
   const [readingLineViewportY, setReadingLineViewportY] = useState<number | null>(null);
   const [readingLineHeight, setReadingLineHeight] = useState<number>(36);
@@ -359,6 +388,9 @@ const App: React.FC = () => {
     if (savedUseAi === 'true') setUseAiReading(true);
     else if (savedUseAi === 'false') setUseAiReading(false);
     else setUseAiReading(true);
+    const savedAutoNext = localStorage.getItem(STORAGE_KEY_AUTO_NEXT);
+    if (savedAutoNext === 'true') setAutoNextChapter(true);
+    else if (savedAutoNext === 'false') setAutoNextChapter(false);
     const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
     if (savedProgress) {
       try {
@@ -387,6 +419,10 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_USE_AI_READING, useAiReading ? 'true' : 'false');
   }, [useAiReading]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_AUTO_NEXT, autoNextChapter ? 'true' : 'false');
+  }, [autoNextChapter]);
 
   useEffect(() => {
     const normalized = normalizePlaybackRate(webRate);
@@ -434,13 +470,14 @@ const App: React.FC = () => {
       setShowSearch(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
-      setWebError(err.message || "載入失敗。");
+      setWebError(getFriendlyError(err?.message || '載入失敗。'));
     } finally {
       setWebLoading(false);
     }
   };
 
   const tryAutoAdvanceToNextChapter = async (): Promise<boolean> => {
+    if (!autoNextChapter) return false;
     const nextUrl = novelRef.current?.nextChapterUrl;
     if (!nextUrl) return false;
     if (autoAdvanceInFlightRef.current) return true;
@@ -832,6 +869,8 @@ const App: React.FC = () => {
         currentNovelTitle={novel?.title ?? webTitle}
         webRate={webRate}
         setWebRate={setWebRate}
+      autoNextChapter={autoNextChapter}
+      setAutoNextChapter={setAutoNextChapter}
         webVoice={webVoice}
         setWebVoice={setWebVoice}
         webVoices={webVoices}
@@ -898,6 +937,15 @@ const App: React.FC = () => {
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 z-[100] bg-gradient-to-t from-black/80 via-black/40 to-transparent backdrop-blur-sm pointer-events-none">
+        <div className="max-w-sm mx-auto mb-2 pointer-events-none text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/45 px-3 py-1 text-xs text-white/90">
+            <span>{useAiReading ? 'AI朗讀' : '系統語音'}</span>
+            <span>·</span>
+            <span>{webRate}x</span>
+            <span>·</span>
+            <span>自動下一章{autoNextChapter ? '開' : '關'}</span>
+          </div>
+        </div>
         <div className="max-w-md mx-auto flex justify-center items-center gap-4 pointer-events-auto">
           <button onClick={() => novel?.prevChapterUrl && handleSearch(novel.prevChapterUrl)} disabled={!novel?.prevChapterUrl} className="p-3 bg-slate-700 text-slate-50 border border-white/20 rounded-full disabled:opacity-30 hover:bg-slate-600 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
