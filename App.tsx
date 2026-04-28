@@ -199,6 +199,7 @@ const App: React.FC = () => {
   const [webVoices, setWebVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [webVoice, setWebVoice] = useState('');
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<'keyword' | 'url'>('keyword');
   const [useAiReading, setUseAiReading] = useState(false);
   const [webAiLoading, setWebAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -388,6 +389,25 @@ const App: React.FC = () => {
     } finally {
       setWebLoading(false);
     }
+  };
+
+  const handleSubmitSearch = async () => {
+    const value = webUrl.trim();
+    if (!value) return;
+    if (searchMode === 'url') {
+      if (!/^https?:\/\//i.test(value)) {
+        setWebError('網址模式請輸入完整網址（需含 http:// 或 https://）');
+        return;
+      }
+      try {
+        new URL(value);
+      } catch {
+        setWebError('網址格式不正確，請檢查後再試');
+        return;
+      }
+    }
+    setIsUrlModalOpen(false);
+    await handleSearch(value);
   };
 
   const startBrowserSpeech = (fullText: string, offset: number, text: string) => {
@@ -628,11 +648,12 @@ const App: React.FC = () => {
         onNewSearch={() => {
           handleWebStop();
           setShowSearch(true);
+          setSearchMode('keyword');
           setWebUrl('');
           setIsUrlModalOpen(true);
         }}
         onConvertToTraditional={handleConvertToTraditional}
-        onOpenUrlModal={() => { setWebUrl(''); setIsUrlModalOpen(true); setIsMenuOpen(false); }}
+        onOpenUrlModal={() => { setSearchMode('url'); setWebUrl(''); setIsUrlModalOpen(true); setIsMenuOpen(false); }}
         currentNovelTitle={novel?.title ?? webTitle}
         webRate={webRate}
         setWebRate={setWebRate}
@@ -752,10 +773,10 @@ const App: React.FC = () => {
       {isUrlModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl text-slate-100 animate-fade-in-up">
-            <h2 className="text-2xl font-bold mb-6 text-center">開始閱讀</h2>
+            <h2 className="text-2xl font-bold mb-6 text-center">{searchMode === 'url' ? '網址抓取' : '新搜尋'}</h2>
             <div className="space-y-4">
-              <input value={webUrl} onChange={(e) => setWebUrl(e.target.value)} placeholder="輸入小說網址或書名關鍵字..." className="w-full bg-slate-800 border border-white/5 p-5 rounded-2xl outline-none" />
-              <button onClick={() => { handleSearch(webUrl); setIsUrlModalOpen(false); }} disabled={webLoading} className="w-full py-5 bg-indigo-600 rounded-2xl font-bold text-lg">{webLoading ? '解析中...' : '立即解析'}</button>
+              <input value={webUrl} onChange={(e) => setWebUrl(e.target.value)} placeholder={searchMode === 'url' ? '請輸入完整網址（https://...）' : '輸入書名關鍵字或網址...'} className="w-full bg-slate-800 border border-white/5 p-5 rounded-2xl outline-none" />
+              <button onClick={handleSubmitSearch} disabled={webLoading} className="w-full py-5 bg-indigo-600 rounded-2xl font-bold text-lg">{webLoading ? '解析中...' : (searchMode === 'url' ? '開始抓取' : '立即搜尋')}</button>
               <button onClick={() => setIsUrlModalOpen(false)} className="w-full mt-2 text-slate-400">取消</button>
             </div>
           </div>
