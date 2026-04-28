@@ -245,14 +245,14 @@ const App: React.FC = () => {
     const safeTop = viewportHeight * 0.35;
     const safeBottom = viewportHeight * 0.65;
     const now = Date.now();
-    const minStepPx = Math.max(lineHeight * 1.5, 48); // 至少跨 1.5 行才捲動
+    const minStepPx = Math.max(lineHeight * 0.7, 20); // 太小就忽略，避免抖動但保留校正能力
     const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
 
     // 朗讀行仍在中央安全區就不捲動，避免視覺抖動。
     if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
     if (now - lastAutoScrollAtRef.current < throttleMs) return;
     const desiredTop = Math.max(0, targetTop - viewportHeight * 0.5);
-    const nextTop = Math.max(currentTop, desiredTop);
+    const nextTop = desiredTop;
     if (Math.abs(nextTop - currentTop) < minStepPx) return;
 
     lastAutoScrollAtRef.current = now;
@@ -494,8 +494,8 @@ const App: React.FC = () => {
           <button onClick={handleWebPlayPause} className="w-14 h-14 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl hover:scale-105 active:scale-95 transition-all">
             {webAiLoading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (webIsSpeaking && !webIsPaused ? <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect width="4" height="16" x="6" y="4" rx="1"/><rect width="4" height="16" x="14" y="4" rx="1"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5"><path d="m7 4 12 8-12 8V4z"/></svg>)}
           </button>
-          <button onClick={handleWebStop} className="p-3 bg-slate-900/80 border border-white/5 rounded-full hover:bg-slate-800 transition-all shadow-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
+          <button onClick={handleWebStop} className="w-14 h-14 bg-slate-900/80 border border-white/5 rounded-full flex items-center justify-center hover:bg-slate-800 transition-all shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
           </button>
           <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-900/80 border border-white/5 rounded-full disabled:opacity-30 hover:bg-slate-800 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
@@ -545,7 +545,8 @@ const App: React.FC = () => {
                 { name: '番茄小說', url: 'https://fanqienovel.com/', c: 'bg-orange-500' },
                 { name: '起點中文網', url: 'https://www.qidian.com/', c: 'bg-red-600' },
                 { name: '晉江文學城', url: 'https://www.jjwxc.net/', c: 'bg-green-600' },
-                { name: '縱橫中文網', url: 'https://www.zongheng.com/', c: 'bg-blue-600' }
+                { name: '縱橫中文網', url: 'https://www.zongheng.com/', c: 'bg-blue-600' },
+                { name: '稷下書院', url: 'https://www.novel543.com/', c: 'bg-violet-600' }
               ].map(site => (
                 <a key={site.name} href={site.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-5 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all group">
                   <div className={`w-12 h-12 rounded-xl ${site.c} flex items-center justify-center text-white font-bold shadow-lg`}>{site.name[0]}</div>
