@@ -61,12 +61,13 @@ export default async function handler(req, res) {
       headers: {
         'xi-api-key': apiKey,
         'Content-Type': 'application/json',
-        'Accept': 'audio/pcm'
+        'Accept': 'audio/mpeg'
       },
       body: JSON.stringify({
         text,
         model_id: modelId,
-        output_format: 'pcm_24000',
+        // 固定用 mp3，避免不同環境對 raw PCM 解析差異造成雜音。
+        output_format: 'mp3_44100_128',
         voice_settings: {
           stability: 0.45,
           similarity_boost: 0.75
@@ -84,7 +85,7 @@ export default async function handler(req, res) {
     const audioBytes = new Uint8Array(await ttsRes.arrayBuffer());
     res.status(200).json({
       audioBase64: toBase64(audioBytes),
-      sampleRate: 24000,
+      sampleRate: 44100,
       numChannels: 1
     });
   } catch (error) {
