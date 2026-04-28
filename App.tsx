@@ -353,7 +353,7 @@ const App: React.FC = () => {
     const lineYInViewport = targetTop - currentTop;
     setReadingLineViewportY(Math.max(0, lineYInViewport));
     setReadingLineHeight(lineHeight);
-    const anchorRatio = 0.38; // 再微幅上移，避免視覺偏下
+    const anchorRatio = 0.34; // 再上移一點，讓朗讀行更靠近上方
     const safeTop = viewportHeight * 0.26;
     const safeBottom = viewportHeight * 0.5;
     const now = Date.now();
