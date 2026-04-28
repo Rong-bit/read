@@ -392,7 +392,7 @@ const App: React.FC = () => {
   };
 
   const handleSubmitSearch = async () => {
-    const value = webUrl.trim();
+    let value = webUrl.trim();
     if (!value) return;
     const looksLikeUrl = /^https?:\/\//i.test(value);
     if (searchMode === 'url') {
@@ -407,16 +407,22 @@ const App: React.FC = () => {
         return;
       }
     } else if (looksLikeUrl) {
-      // 新搜尋模式：若使用者輸入的是網址字串，也先做合法性驗證，避免後端 fetch 500。
+      // 新搜尋模式：若輸入了像 https://聚寶仙盆 這類非完整網址，直接降級為關鍵字搜尋。
       try {
         const u = new URL(value);
         if (!u.hostname || !u.hostname.includes('.')) {
-          setWebError('你輸入的是網址格式，但網域不完整。請改輸入書名關鍵字，或使用「網址抓取」並輸入完整網址。');
-          return;
+          value = value.replace(/^https?:\/\//i, '').trim();
+          if (!value) {
+            setWebError('網址格式不正確。若要搜尋書名，請直接輸入書名關鍵字。');
+            return;
+          }
         }
       } catch {
-        setWebError('網址格式不正確。若要搜尋書名，請不要加 https://；若要抓網址，請改用「網址抓取」。');
-        return;
+        value = value.replace(/^https?:\/\//i, '').trim();
+        if (!value) {
+          setWebError('網址格式不正確。若要搜尋書名，請直接輸入書名關鍵字。');
+          return;
+        }
       }
     }
     setIsUrlModalOpen(false);
