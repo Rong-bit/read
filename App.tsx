@@ -572,6 +572,7 @@ const App: React.FC = () => {
   };
 
   const startBrowserSpeech = (fullText: string, offset: number, text: string) => {
+    suppressOnEndRef.current = false;
     handleWebStop();
     pendingBrowserSpeechRef.current = null;
     const utterance = new SpeechSynthesisUtterance(text);
@@ -670,6 +671,7 @@ const App: React.FC = () => {
     // 僅在「新開始播放」前做一次系統語音預熱，避免干擾暫停/續播切換。
     primeSystemSpeech();
     if (useAiReading) {
+      suppressOnEndRef.current = false;
       handleWebStop();
       const segments = splitTextForTTSWithRanges(text, 1200);
       setWebAiLoading(true);
@@ -759,7 +761,11 @@ const App: React.FC = () => {
   };
 
   const handleWebStop = (resetReadingPosition: boolean = false) => {
-    suppressOnEndRef.current = true;
+    const hasActiveSystemSpeech = typeof window !== 'undefined'
+      && typeof window.speechSynthesis !== 'undefined'
+      && (window.speechSynthesis.speaking || window.speechSynthesis.pending);
+    const hasActivePlayback = webAiPlayingRef.current || !!sourceRef.current || !!htmlAudioRef.current || hasActiveSystemSpeech;
+    suppressOnEndRef.current = hasActivePlayback;
     pendingBrowserSpeechRef.current = null;
     stopAiProgressLoop();
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
@@ -918,7 +924,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-500 ${getThemeClass()}`}>
+    <div className={`h-screen overflow-hidden flex flex-col transition-colors duration-500 ${getThemeClass()}`}>
       <Header onToggleMenu={() => setIsMenuOpen(true)} title={webTitle || novel?.title} />
       
       <Sidebar 
@@ -949,7 +955,7 @@ const App: React.FC = () => {
         setUseAiReading={setUseAiReading}
       />
 
-      <main className="flex-1 w-full px-4 md:px-12 lg:px-24">
+      <main className="flex-1 w-full overflow-hidden px-4 md:px-12 lg:px-24">
         <div className="max-w-[90rem] mx-auto pt-6 md:pt-8">
           <div className="space-y-8 pb-48">
             {webError && (
