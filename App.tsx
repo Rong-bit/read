@@ -108,9 +108,9 @@ type LocalHeaderProps = {
 const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu, title }) => (
   <header className="relative flex items-center justify-center gap-3 px-4 md:px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
     <div className="max-w-[70%] text-base md:text-lg font-bold truncate text-slate-100 text-center">
-      {title || ''}
+      {title || '尚未載入章節'}
     </div>
-    <button onClick={onToggleMenu} className="absolute right-4 md:right-6 top-1/2 -translate-y-1/2 px-3 py-2 rounded-lg bg-slate-700 text-slate-50 font-semibold border border-white/20 hover:bg-slate-600 shrink-0">
+    <button onClick={onToggleMenu} className="absolute right-4 md:right-6 px-3 py-2 rounded-lg bg-slate-700 text-slate-50 font-semibold border border-white/20 hover:bg-slate-600 shrink-0">
       選單
     </button>
   </header>
