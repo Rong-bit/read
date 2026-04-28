@@ -446,7 +446,10 @@ const App: React.FC = () => {
     const textarea = webTextareaRef.current;
     if (!pending || !textarea || !webText.trim()) return;
     textarea.scrollTo({ top: Math.max(0, pending.scrollTop), behavior: 'auto' });
-    setReadingCharIndex(pending.readingCharIndex ?? null);
+    const restoredCharIndex = typeof pending.readingCharIndex === 'number'
+      ? pending.readingCharIndex
+      : getCharIndexFromLineNumber(webText, pending.lineNumber || 1);
+    setReadingCharIndex(restoredCharIndex);
     pendingRestoreRef.current = null;
   }, [webText]);
 
@@ -798,19 +801,32 @@ const App: React.FC = () => {
     return Math.max(1, Math.floor(textarea.scrollTop / Math.max(1, lineHeight)) + 1);
   };
 
+  const getCharIndexFromLineNumber = (text: string, lineNumber: number): number => {
+    const lines = text.split(/\r?\n/);
+    if (lines.length === 0) return 0;
+    const targetLine = Math.max(1, Math.min(lineNumber, lines.length));
+    let index = 0;
+    for (let i = 1; i < targetLine; i += 1) {
+      index += lines[i - 1].length + 1;
+    }
+    return Math.max(0, Math.min(index, text.length));
+  };
+
   const handleSaveBookmark = () => {
     const textarea = webTextareaRef.current;
     if (!webText.trim() || !textarea) {
       showToast('目前沒有可儲存的內容');
       return;
     }
+    const lineNumber = estimateCurrentLineNumber(textarea, readingCharIndex);
+    const fallbackCharIndex = getCharIndexFromLineNumber(webText, lineNumber);
     const payload: BookmarkData = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       title: webTitle || novel?.title || '未命名章節',
       sourceUrl: novel?.sourceUrl || webUrl || '',
       scrollTop: textarea.scrollTop,
-      readingCharIndex,
-      lineNumber: estimateCurrentLineNumber(textarea, readingCharIndex),
+      readingCharIndex: typeof readingCharIndex === 'number' ? readingCharIndex : fallbackCharIndex,
+      lineNumber,
       savedAt: Date.now(),
     };
     const next = [payload, ...bookmarks].slice(0, 30);
@@ -834,7 +850,7 @@ const App: React.FC = () => {
     setShowResumeToast(false);
     setIsBookmarkListOpen(false);
     await handleSearch(chosen.sourceUrl);
-    showToast('已回到書籤位置');
+    showToast(`已回到第 ${chosen.lineNumber || 1} 行`);
   };
 
   const handleOpenBookmarkList = () => {
