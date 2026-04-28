@@ -19,6 +19,7 @@ type BookmarkData = {
   sourceUrl: string;
   scrollTop: number;
   readingCharIndex: number | null;
+  lineNumber: number;
   savedAt: number;
 };
 const s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' });
@@ -408,6 +409,7 @@ const App: React.FC = () => {
           sourceUrl: x.sourceUrl,
           scrollTop: Number(x.scrollTop || 0),
           readingCharIndex: typeof x.readingCharIndex === 'number' ? x.readingCharIndex : null,
+          lineNumber: Number.isFinite(Number(x.lineNumber)) && Number(x.lineNumber) > 0 ? Number(x.lineNumber) : 1,
           savedAt: Number(x.savedAt || Date.now()),
         })) as BookmarkData[];
         setBookmarks(normalized);
@@ -511,6 +513,14 @@ const App: React.FC = () => {
     } catch {
       // ignore warmup failures; fallback path still handles retry prompt
     }
+  };
+
+  const getPlaybackStartIndex = (text: string, preferredIndex: number | null): number => {
+    if (typeof preferredIndex === 'number' && Number.isFinite(preferredIndex)) {
+      return Math.max(0, Math.min(preferredIndex, text.length));
+    }
+    const firstContentIndex = text.search(/\S/);
+    return firstContentIndex >= 0 ? firstContentIndex : 0;
   };
 
   const handleSubmitSearch = async () => {
@@ -617,8 +627,7 @@ const App: React.FC = () => {
     }
     const fullText = webText;
     if (!fullText.trim()) return;
-    const firstContentIndex = fullText.search(/\S/);
-    const offset = firstContentIndex >= 0 ? firstContentIndex : 0;
+    const offset = getPlaybackStartIndex(fullText, readingCharIndex);
     const text = fullText.slice(offset);
     if (webAiPlayingRef.current) {
       if (aiPlaybackModeRef.current === 'htmlaudio' && htmlAudioRef.current) {
@@ -778,6 +787,17 @@ const App: React.FC = () => {
     toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 1800);
   };
 
+  const estimateCurrentLineNumber = (textarea: HTMLTextAreaElement, charIndex: number | null): number => {
+    if (charIndex !== null) {
+      const i = Math.max(0, Math.min(charIndex, textarea.value.length));
+      return Math.max(1, textarea.value.slice(0, i).split(/\r?\n/).length);
+    }
+    const computed = window.getComputedStyle(textarea);
+    const parsedLineHeight = parseFloat(computed.lineHeight || '');
+    const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
+    return Math.max(1, Math.floor(textarea.scrollTop / Math.max(1, lineHeight)) + 1);
+  };
+
   const handleSaveBookmark = () => {
     const textarea = webTextareaRef.current;
     if (!webText.trim() || !textarea) {
@@ -790,6 +810,7 @@ const App: React.FC = () => {
       sourceUrl: novel?.sourceUrl || webUrl || '',
       scrollTop: textarea.scrollTop,
       readingCharIndex,
+      lineNumber: estimateCurrentLineNumber(textarea, readingCharIndex),
       savedAt: Date.now(),
     };
     const next = [payload, ...bookmarks].slice(0, 30);
@@ -1058,7 +1079,8 @@ const App: React.FC = () => {
                 <div key={b.id} className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10">
                   <button className="flex-1 text-left px-2 py-2 hover:bg-white/10 rounded-lg" onClick={() => handleRestoreBookmark(b)}>
                     <div className="font-semibold truncate">{b.title}</div>
-                    <div className="text-xs text-slate-400">{new Date(b.savedAt).toLocaleString()}</div>
+                    <div className="text-xs text-slate-400">第 {b.lineNumber || 1} 行</div>
+                    <div className="text-xs text-slate-500">{new Date(b.savedAt).toLocaleString()}</div>
                   </button>
                   <button className="px-2 py-1 text-xs rounded bg-rose-600/80 hover:bg-rose-500" onClick={() => handleDeleteBookmark(b.id)}>刪除</button>
                 </div>
