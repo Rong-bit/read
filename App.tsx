@@ -82,11 +82,15 @@ function getScrollContentOffsetTopForCharIndex(textarea: HTMLTextAreaElement, ch
 
 type LocalHeaderProps = {
   onToggleMenu: () => void;
+  title?: string;
 };
 
-const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu }) => (
-  <header className="flex items-center justify-end px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
-    <button onClick={onToggleMenu} className="px-3 py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700/70">
+const Header: React.FC<LocalHeaderProps> = ({ onToggleMenu, title }) => (
+  <header className="flex items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
+    <div className="min-w-0 text-base md:text-lg font-bold truncate text-slate-100">
+      {title || '未命名章節'}
+    </div>
+    <button onClick={onToggleMenu} className="px-3 py-2 rounded-lg bg-slate-800/70 hover:bg-slate-700/70 shrink-0">
       選單
     </button>
   </header>
@@ -475,7 +479,7 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-500 ${getThemeClass()}`}>
-      <Header onToggleMenu={() => setIsMenuOpen(true)} />
+      <Header onToggleMenu={() => setIsMenuOpen(true)} title={webTitle || novel?.title} />
       
       <Sidebar 
         isOpen={isMenuOpen}
