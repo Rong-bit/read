@@ -37,6 +37,22 @@ const getTtsApiUrl = (): string => {
   return `${baseUrl.replace(/\/+$/, '')}/api/tts-elevenlabs`;
 };
 
+const resolveElevenLabsVoiceId = (voiceName?: string): string | undefined => {
+  const defaultVoiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID?.trim() || 'EXAVITQu4vr4xnSDxMaL';
+  const raw = (voiceName || '').trim();
+  if (!raw) return defaultVoiceId;
+
+  // 如果已經是 ElevenLabs voiceId，直接使用。
+  if (/^[A-Za-z0-9_-]{10,}$/.test(raw)) return raw;
+
+  // 與舊版語音名稱相容（例如 Kore）。
+  const alias = raw.toLowerCase();
+  const aliasMap: Record<string, string> = {
+    kore: defaultVoiceId
+  };
+  return aliasMap[alias] || defaultVoiceId;
+};
+
 const isLikelyUrlInput = (value: string): boolean => {
   const raw = value.trim();
   if (!raw) return false;
@@ -226,13 +242,13 @@ export const generateSpeech = async (
   voiceName: string = 'Kore'
 ): Promise<string> => {
   const apiUrl = getTtsApiUrl();
+  const voiceId = resolveElevenLabsVoiceId(voiceName);
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
-      // 允許傳入 ElevenLabs voiceId；若不是合法 id，後端會忽略並回退預設語音
-      voiceId: /^[A-Za-z0-9_-]{10,}$/.test(voiceName) ? voiceName : undefined
+      voiceId
     })
   });
   if (!res.ok) {
