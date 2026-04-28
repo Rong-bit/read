@@ -513,7 +513,21 @@ const App: React.FC = () => {
           const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
           const source = ctx.createBufferSource();
           source.buffer = audioBuffer;
-          source.connect(ctx.destination);
+          const gainNode = ctx.createGain();
+          source.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          // ElevenLabs PCM 分段播放時，硬切換常會產生爆音；用短淡入淡出平滑邊界。
+          const now = ctx.currentTime;
+          const fadeInSec = Math.min(0.02, Math.max(0.006, audioBuffer.duration * 0.08));
+          const fadeOutSec = Math.min(0.03, Math.max(0.01, audioBuffer.duration * 0.12));
+          const playGain = 0.9; // 降一點峰值，減少削波失真機率
+          gainNode.gain.cancelScheduledValues(now);
+          gainNode.gain.setValueAtTime(0, now);
+          gainNode.gain.linearRampToValueAtTime(playGain, now + fadeInSec);
+          const fadeOutStart = Math.max(now + fadeInSec, now + audioBuffer.duration - fadeOutSec);
+          gainNode.gain.setValueAtTime(playGain, fadeOutStart);
+          gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
           source.onended = () => {
             stopAiProgressLoop();
             if (webAiPlayingRef.current) playNextSegment(index + 1);
