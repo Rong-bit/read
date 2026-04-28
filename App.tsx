@@ -308,7 +308,14 @@ const App: React.FC = () => {
 
   const initAudioContext = () => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      try {
+        // 手機瀏覽器（特別是部分 iOS/Safari）對指定 sampleRate 相容性較差，先用預設值。
+        audioContextRef.current = new Ctx();
+      } catch {
+        // 後備：若預設建構失敗，再嘗試舊設定。
+        audioContextRef.current = new Ctx({ sampleRate: 24000 });
+      }
     }
     return audioContextRef.current;
   };
@@ -381,7 +388,11 @@ const App: React.FC = () => {
           };
           startAiProgressLoop();
           setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
-        } catch (e) { setWebError("AI 朗讀出錯。"); handleWebStop(); }
+        } catch (e: any) {
+          const msg = e?.message ? `AI 朗讀出錯：${e.message}` : "AI 朗讀出錯。";
+          setWebError(msg);
+          handleWebStop();
+        }
       };
       playNextSegment(0);
     } else {
