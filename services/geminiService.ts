@@ -257,5 +257,11 @@ export const generateSpeech = async (
   }
   const data = await res.json();
   if (!data.audioBase64) throw new Error('ElevenLabs 未回傳音訊');
+  if (data.debug) {
+    console.log('TTS debug:', {
+      upstreamContentType: data.debug.upstreamContentType,
+      first8BytesHex: data.debug.first8BytesHex
+    });
+  }
   return data.audioBase64 as string;
 };
