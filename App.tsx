@@ -451,6 +451,8 @@ const App: React.FC = () => {
       ? pending.readingCharIndex
       : getCharIndexFromLineNumber(webText, pending.lineNumber || 1);
     setReadingCharIndex(restoredCharIndex);
+    // 書籤定位完成後，清除「強制章首播放」旗標，確保可從書籤行開始播放。
+    forceStartFromTopRef.current = false;
     pendingRestoreRef.current = null;
   }, [webText]);
 
