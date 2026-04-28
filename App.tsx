@@ -208,6 +208,8 @@ const App: React.FC = () => {
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
+  const aiPlaybackModeRef = useRef<'webaudio' | 'htmlaudio'>('webaudio');
   const toastTimerRef = useRef<number | null>(null);
   const pendingRestoreRef = useRef<BookmarkData | null>(null);
   const webAiPlayingRef = useRef(false);
@@ -486,9 +488,16 @@ const App: React.FC = () => {
     const firstContentIndex = fullText.search(/\S/);
     const offset = firstContentIndex >= 0 ? firstContentIndex : 0;
     const text = fullText.slice(offset);
-    if (webAiPlayingRef.current && audioContextRef.current) {
-      if (!webIsPaused) { await audioContextRef.current.suspend(); setWebIsPaused(true); }
-      else { await audioContextRef.current.resume(); setWebIsPaused(false); }
+    if (webAiPlayingRef.current) {
+      if (aiPlaybackModeRef.current === 'htmlaudio' && htmlAudioRef.current) {
+        if (!webIsPaused) { htmlAudioRef.current.pause(); setWebIsPaused(true); }
+        else { await htmlAudioRef.current.play(); setWebIsPaused(false); }
+        return;
+      }
+      if (audioContextRef.current) {
+        if (!webIsPaused) { await audioContextRef.current.suspend(); setWebIsPaused(true); }
+        else { await audioContextRef.current.resume(); setWebIsPaused(false); }
+      }
       return;
     }
     if (window.speechSynthesis.speaking && !webAiPlayingRef.current) {
@@ -510,38 +519,60 @@ const App: React.FC = () => {
           const currentSegment = segments[index];
           setReadingCharIndex(offset + currentSegment.start);
           const base64Audio = await generateSpeech(currentSegment.text, 'Kore');
-          const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-          const source = ctx.createBufferSource();
-          source.buffer = audioBuffer;
-          const gainNode = ctx.createGain();
-          source.connect(gainNode);
-          gainNode.connect(ctx.destination);
+          try {
+            const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+            aiPlaybackModeRef.current = 'webaudio';
+            const source = ctx.createBufferSource();
+            source.buffer = audioBuffer;
+            const gainNode = ctx.createGain();
+            source.connect(gainNode);
+            gainNode.connect(ctx.destination);
 
-          // ElevenLabs PCM 分段播放時，硬切換常會產生爆音；用短淡入淡出平滑邊界。
-          const now = ctx.currentTime;
-          const fadeInSec = Math.min(0.02, Math.max(0.006, audioBuffer.duration * 0.08));
-          const fadeOutSec = Math.min(0.03, Math.max(0.01, audioBuffer.duration * 0.12));
-          const playGain = 0.9; // 降一點峰值，減少削波失真機率
-          gainNode.gain.cancelScheduledValues(now);
-          gainNode.gain.setValueAtTime(0, now);
-          gainNode.gain.linearRampToValueAtTime(playGain, now + fadeInSec);
-          const fadeOutStart = Math.max(now + fadeInSec, now + audioBuffer.duration - fadeOutSec);
-          gainNode.gain.setValueAtTime(playGain, fadeOutStart);
-          gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
-          source.onended = () => {
-            stopAiProgressLoop();
-            if (webAiPlayingRef.current) playNextSegment(index + 1);
-          };
-          source.start(0);
-          sourceRef.current = source;
-          aiSegmentProgressRef.current = {
-            ctx,
-            startCtxTime: ctx.currentTime,
-            duration: audioBuffer.duration,
-            charStart: offset + currentSegment.start,
-            charEnd: offset + currentSegment.end,
-          };
-          startAiProgressLoop();
+            const now = ctx.currentTime;
+            const fadeInSec = Math.min(0.02, Math.max(0.006, audioBuffer.duration * 0.08));
+            const fadeOutSec = Math.min(0.03, Math.max(0.01, audioBuffer.duration * 0.12));
+            const playGain = 0.9;
+            gainNode.gain.cancelScheduledValues(now);
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(playGain, now + fadeInSec);
+            const fadeOutStart = Math.max(now + fadeInSec, now + audioBuffer.duration - fadeOutSec);
+            gainNode.gain.setValueAtTime(playGain, fadeOutStart);
+            gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
+            source.onended = () => {
+              stopAiProgressLoop();
+              if (webAiPlayingRef.current) playNextSegment(index + 1);
+            };
+            source.start(0);
+            sourceRef.current = source;
+            aiSegmentProgressRef.current = {
+              ctx,
+              startCtxTime: ctx.currentTime,
+              duration: audioBuffer.duration,
+              charStart: offset + currentSegment.start,
+              charEnd: offset + currentSegment.end,
+            };
+            startAiProgressLoop();
+          } catch {
+            // 桌面瀏覽器若 WebAudio 解碼不穩，改用 HTMLAudio 直接播放 mp3。
+            aiPlaybackModeRef.current = 'htmlaudio';
+            const bytes = decode(base64Audio);
+            const byteBuffer = bytes.slice().buffer as ArrayBuffer;
+            const blob = new Blob([byteBuffer], { type: 'audio/mpeg' });
+            const objectUrl = URL.createObjectURL(blob);
+            const audio = new Audio(objectUrl);
+            htmlAudioRef.current = audio;
+            audio.onended = () => {
+              URL.revokeObjectURL(objectUrl);
+              htmlAudioRef.current = null;
+              if (webAiPlayingRef.current) playNextSegment(index + 1);
+            };
+            audio.onerror = () => {
+              URL.revokeObjectURL(objectUrl);
+              htmlAudioRef.current = null;
+              throw new Error('HTMLAudio 播放失敗');
+            };
+            await audio.play();
+          }
           setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
         } catch (e: any) {
           // AI 失敗時靜默降級到系統朗讀，避免錯誤訊息長駐畫面。
@@ -563,6 +594,12 @@ const App: React.FC = () => {
   const handleWebStop = () => {
     stopAiProgressLoop();
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
+    if (htmlAudioRef.current) {
+      try { htmlAudioRef.current.pause(); } catch {}
+      htmlAudioRef.current.src = '';
+      htmlAudioRef.current = null;
+    }
+    aiPlaybackModeRef.current = 'webaudio';
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
     if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
     setWebIsSpeaking(false); setWebIsPaused(false); setWebAiLoading(false);
