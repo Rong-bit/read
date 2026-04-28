@@ -12,6 +12,7 @@ const STORAGE_KEY_WEB_RATE = 'web_reader_rate';
 const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 type BookmarkData = {
+  id: string;
   title: string;
   sourceUrl: string;
   scrollTop: number;
@@ -201,6 +202,8 @@ const App: React.FC = () => {
   const [useAiReading, setUseAiReading] = useState(false);
   const [webAiLoading, setWebAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [bookmarks, setBookmarks] = useState<BookmarkData[]>([]);
+  const [isBookmarkListOpen, setIsBookmarkListOpen] = useState(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -320,7 +323,24 @@ const App: React.FC = () => {
     const savedUseAi = localStorage.getItem(STORAGE_KEY_USE_AI_READING);
     if (savedUseAi === 'true') setUseAiReading(true);
     const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
-    if (savedProgress) setShowResumeToast(true);
+    if (savedProgress) {
+      try {
+        const parsed = JSON.parse(savedProgress);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        const normalized = list.filter((x) => x?.sourceUrl).map((x) => ({
+          id: x.id || `${x.savedAt || Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          title: x.title || '未命名章節',
+          sourceUrl: x.sourceUrl,
+          scrollTop: Number(x.scrollTop || 0),
+          readingCharIndex: typeof x.readingCharIndex === 'number' ? x.readingCharIndex : null,
+          savedAt: Number(x.savedAt || Date.now()),
+        })) as BookmarkData[];
+        setBookmarks(normalized);
+        if (normalized.length > 0) setShowResumeToast(true);
+      } catch {
+        // ignore invalid bookmark payload
+      }
+    }
 
     const loadVoices = () => setWebVoices(window.speechSynthesis.getVoices());
     loadVoices();
@@ -526,39 +546,54 @@ const App: React.FC = () => {
       showToast('目前沒有可儲存的內容');
       return;
     }
-    const payload = {
+    const payload: BookmarkData = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       title: webTitle || novel?.title || '未命名章節',
       sourceUrl: novel?.sourceUrl || webUrl || '',
       scrollTop: textarea.scrollTop,
       readingCharIndex,
       savedAt: Date.now(),
     };
-    localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(payload));
+    const next = [payload, ...bookmarks].slice(0, 30);
+    setBookmarks(next);
+    localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(next));
     setShowResumeToast(true);
     showToast('書籤已儲存');
   };
 
-  const handleRestoreBookmark = async () => {
-    const raw = localStorage.getItem(STORAGE_KEY_PROGRESS);
-    if (!raw) {
+  const handleRestoreBookmark = async (target?: BookmarkData) => {
+    const chosen = target || bookmarks[0];
+    if (!chosen) {
       showToast('尚未儲存書籤');
       return;
     }
-    let data: BookmarkData;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      showToast('書籤資料已損毀');
-      return;
-    }
-    if (!data?.sourceUrl) {
+    if (!chosen?.sourceUrl) {
       showToast('書籤缺少來源網址');
       return;
     }
-    pendingRestoreRef.current = data;
+    pendingRestoreRef.current = chosen;
     setShowResumeToast(false);
-    await handleSearch(data.sourceUrl);
+    setIsBookmarkListOpen(false);
+    await handleSearch(chosen.sourceUrl);
     showToast('已回到書籤位置');
+  };
+
+  const handleOpenBookmarkList = () => {
+    if (bookmarks.length === 0) {
+      showToast('尚未儲存書籤');
+      return;
+    }
+    setIsBookmarkListOpen(true);
+  };
+
+  const handleDeleteBookmark = (id: string) => {
+    const next = bookmarks.filter((b) => b.id !== id);
+    setBookmarks(next);
+    localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(next));
+    if (next.length === 0) {
+      setShowResumeToast(false);
+      setIsBookmarkListOpen(false);
+    }
   };
 
   const handleConvertToTraditional = () => {
@@ -675,7 +710,7 @@ const App: React.FC = () => {
           <button onClick={handleSaveBookmark} className="p-3 bg-amber-500 text-slate-950 border border-amber-200/50 rounded-full flex items-center justify-center hover:bg-amber-400 transition-all shadow-lg" title="儲存書籤">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 3a2 2 0 0 0-2 2v16l8-4.5L20 21V5a2 2 0 0 0-2-2H6z"/></svg>
           </button>
-          <button onClick={handleRestoreBookmark} className="p-3 bg-emerald-500 text-white border border-emerald-200/50 rounded-full flex items-center justify-center hover:bg-emerald-400 transition-all shadow-lg" title="回到書籤">
+          <button onClick={handleOpenBookmarkList} className="p-3 bg-emerald-500 text-white border border-emerald-200/50 rounded-full flex items-center justify-center hover:bg-emerald-400 transition-all shadow-lg" title="回到書籤">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
           </button>
           <button onClick={() => novel?.nextChapterUrl && handleSearch(novel.nextChapterUrl)} disabled={!novel?.nextChapterUrl} className="p-3 bg-slate-700 text-slate-50 border border-white/20 rounded-full disabled:opacity-30 hover:bg-slate-600 transition-all shadow-lg">
@@ -686,7 +721,7 @@ const App: React.FC = () => {
           <div className="mt-2 max-w-sm mx-auto pointer-events-auto">
             <div className="flex items-center justify-between gap-2 rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-sm text-white/95">
               <span>偵測到已儲存書籤</span>
-              <button className="px-2 py-1 rounded bg-emerald-500 text-white font-semibold" onClick={handleRestoreBookmark}>回到書籤</button>
+              <button className="px-2 py-1 rounded bg-emerald-500 text-white font-semibold" onClick={handleOpenBookmarkList}>選擇書籤</button>
             </div>
           </div>
         )}
@@ -749,6 +784,28 @@ const App: React.FC = () => {
                     <p className="text-[10px] text-slate-500 font-bold tracking-widest uppercase">前往官方網站</p>
                   </div>
                 </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBookmarkListOpen && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 text-slate-100 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold">選擇書籤</h3>
+              <button className="text-slate-300 hover:text-white" onClick={() => setIsBookmarkListOpen(false)}>關閉</button>
+            </div>
+            <div className="max-h-[50vh] overflow-y-auto space-y-2">
+              {bookmarks.map((b) => (
+                <div key={b.id} className="flex items-center gap-2 p-2 rounded-xl bg-white/5 border border-white/10">
+                  <button className="flex-1 text-left px-2 py-2 hover:bg-white/10 rounded-lg" onClick={() => handleRestoreBookmark(b)}>
+                    <div className="font-semibold truncate">{b.title}</div>
+                    <div className="text-xs text-slate-400">{new Date(b.savedAt).toLocaleString()}</div>
+                  </button>
+                  <button className="px-2 py-1 text-xs rounded bg-rose-600/80 hover:bg-rose-500" onClick={() => handleDeleteBookmark(b.id)}>刪除</button>
+                </div>
               ))}
             </div>
           </div>
