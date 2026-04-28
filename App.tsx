@@ -351,19 +351,29 @@ const App: React.FC = () => {
     const viewportHeight = textarea.clientHeight || 600;
     const currentTop = textarea.scrollTop;
     const lineYInViewport = targetTop - currentTop;
-    setReadingLineViewportY(Math.max(0, lineYInViewport));
     setReadingLineHeight(lineHeight);
     const anchorRatio = 0.34; // 再上移一點，讓朗讀行更靠近上方
+    const pinnedY = viewportHeight * anchorRatio;
+    const maxScrollTop = Math.max(0, textarea.scrollHeight - viewportHeight);
+    const desiredTop = Math.max(0, Math.min(targetTop - pinnedY, maxScrollTop));
+    const canPinCenter = desiredTop > 1 && desiredTop < maxScrollTop - 1;
+    // 可置中的區間固定反白位置，讓文字流動；首尾無法置中時退回真實位置。
+    setReadingLineViewportY(canPinCenter ? pinnedY : Math.max(0, lineYInViewport));
     const safeTop = viewportHeight * 0.26;
     const safeBottom = viewportHeight * 0.5;
     const now = Date.now();
     const minStepPx = Math.max(lineHeight * 0.7, 20); // 太小就忽略，避免抖動但保留校正能力
     const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
 
+    if (canPinCenter) {
+      if (Math.abs(desiredTop - currentTop) < 1) return;
+      textarea.scrollTo({ top: desiredTop, behavior: 'auto' });
+      return;
+    }
+
     // 朗讀行仍在中央安全區就不捲動，避免視覺抖動。
     if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
     if (now - lastAutoScrollAtRef.current < throttleMs) return;
-    const desiredTop = Math.max(0, targetTop - viewportHeight * anchorRatio);
     const nextTop = desiredTop;
     if (Math.abs(nextTop - currentTop) < minStepPx) return;
 
