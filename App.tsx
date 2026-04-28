@@ -274,6 +274,7 @@ const App: React.FC = () => {
   const shouldAutoplayAfterSearchRef = useRef(false);
   const pendingBrowserSpeechRef = useRef<{ fullText: string; offset: number; text: string } | null>(null);
   const forceStartFromTopRef = useRef(false);
+  const suppressOnEndRef = useRef(false);
 
   const getFriendlyError = (raw: string): string => {
     const text = (raw || '').toLowerCase();
@@ -610,6 +611,10 @@ const App: React.FC = () => {
       if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
       setWebIsSpeaking(false);
       setWebIsPaused(false);
+      if (suppressOnEndRef.current) {
+        suppressOnEndRef.current = false;
+        return;
+      }
       void (async () => {
         const moved = await tryAutoAdvanceToNextChapter();
         if (!moved) setReadingCharIndex(null);
@@ -750,6 +755,7 @@ const App: React.FC = () => {
   };
 
   const handleWebStop = (resetReadingPosition: boolean = false) => {
+    suppressOnEndRef.current = true;
     stopAiProgressLoop();
     if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
     if (htmlAudioRef.current) {
