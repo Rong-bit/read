@@ -997,7 +997,7 @@ const App: React.FC = () => {
           <button onClick={handleWebPlayPause} className="p-3 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl hover:scale-105 active:scale-95 transition-all">
             {webAiLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (webIsSpeaking && !webIsPaused ? <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="4" height="16" x="6" y="4" rx="1"/><rect width="4" height="16" x="14" y="4" rx="1"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5"><path d="m7 4 12 8-12 8V4z"/></svg>)}
           </button>
-          <button onClick={handleWebStop} className="p-3 bg-rose-600 text-white border border-rose-300/40 rounded-full flex items-center justify-center hover:bg-rose-500 transition-all shadow-lg">
+          <button onClick={() => handleWebStop(true)} className="p-3 bg-rose-600 text-white border border-rose-300/40 rounded-full flex items-center justify-center hover:bg-rose-500 transition-all shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
           </button>
           <button onClick={handleSaveBookmark} className="p-3 bg-amber-500 text-slate-950 border border-amber-200/50 rounded-full flex items-center justify-center hover:bg-amber-400 transition-all shadow-lg" title="儲存書籤">
