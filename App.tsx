@@ -200,7 +200,7 @@ const App: React.FC = () => {
   const [webVoice, setWebVoice] = useState('');
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<'keyword' | 'url'>('keyword');
-  const [useAiReading, setUseAiReading] = useState(false);
+  const [useAiReading, setUseAiReading] = useState(true);
   const [webAiLoading, setWebAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkData[]>([]);
@@ -323,6 +323,8 @@ const App: React.FC = () => {
     if (savedWebRate) setWebRate(parseFloat(savedWebRate));
     const savedUseAi = localStorage.getItem(STORAGE_KEY_USE_AI_READING);
     if (savedUseAi === 'true') setUseAiReading(true);
+    else if (savedUseAi === 'false') setUseAiReading(false);
+    else setUseAiReading(true);
     const savedProgress = localStorage.getItem(STORAGE_KEY_PROGRESS);
     if (savedProgress) {
       try {
@@ -347,6 +349,10 @@ const App: React.FC = () => {
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_USE_AI_READING, useAiReading ? 'true' : 'false');
+  }, [useAiReading]);
 
   useEffect(() => {
     const pending = pendingRestoreRef.current;
