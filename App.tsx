@@ -421,6 +421,7 @@ const App: React.FC = () => {
     ctx: AudioContext;
     startCtxTime: number;
     duration: number;
+    bufferDuration: number;
     charStart: number;
     charEnd: number;
   } | null>(null);
@@ -430,7 +431,25 @@ const App: React.FC = () => {
   const pendingBrowserSpeechRef = useRef<{ fullText: string; offset: number; text: string } | null>(null);
   const forceStartFromTopRef = useRef(false);
   const suppressOnEndRef = useRef(false);
+  const voiceRef = useRef(voice);
+  const webRateRef = useRef(webRate);
+  const webVoiceRef = useRef(webVoice);
+  const webTextRef = useRef(webText);
+  const readingCharIndexRef = useRef<number | null>(null);
+  const webVoicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  const aiPlaybackStateRef = useRef<{
+    fullText: string;
+    offset: number;
+    segments: Array<{ text: string; start: number; end: number }>;
+    segmentIndex: number;
+    ctx: AudioContext;
+  } | null>(null);
+  const playAiSegmentRef = useRef<(index: number) => Promise<void>>(async () => {});
 
+  useEffect(() => { voiceRef.current = voice; }, [voice]);
+  useEffect(() => { webRateRef.current = webRate; }, [webRate]);
+  useEffect(() => { webVoiceRef.current = webVoice; }, [webVoice]);
+  useEffect(() => { webTextRef.current = webText; }, [webText]);
   const getFriendlyError = (raw: string): string => {
     const text = (raw || '').toLowerCase();
     if (text.includes('quota') || text.includes('429') || text.includes('rate limit')) {
@@ -462,6 +481,108 @@ const App: React.FC = () => {
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
   const [readingLineViewportY, setReadingLineViewportY] = useState<number | null>(null);
   const [readingLineHeight, setReadingLineHeight] = useState<number>(36);
+
+  useEffect(() => { readingCharIndexRef.current = readingCharIndex; }, [readingCharIndex]);
+  useEffect(() => { webVoicesRef.current = webVoices; }, [webVoices]);
+
+  const stopCurrentAiSegmentOnly = () => {
+    stopAiProgressLoop();
+    if (sourceRef.current) {
+      try { sourceRef.current.stop(); } catch { /* ignore */ }
+      sourceRef.current = null;
+    }
+    if (htmlAudioRef.current) {
+      try { htmlAudioRef.current.pause(); } catch { /* ignore */ }
+      htmlAudioRef.current.src = '';
+      htmlAudioRef.current = null;
+    }
+  };
+
+  const applyLivePlaybackRate = () => {
+    const rate = webRateRef.current;
+    if (htmlAudioRef.current) {
+      htmlAudioRef.current.playbackRate = rate;
+    }
+    if (sourceRef.current) {
+      sourceRef.current.playbackRate.value = rate;
+    }
+    const meta = aiSegmentProgressRef.current;
+    if (meta) {
+      meta.duration = meta.bufferDuration / Math.max(0.1, rate);
+    }
+  };
+
+  const restartAiPlaybackAtCurrentPosition = () => {
+    const state = aiPlaybackStateRef.current;
+    if (!state || !webAiPlayingRef.current) return;
+    stopCurrentAiSegmentOnly();
+    const charPos = readingCharIndexRef.current ?? state.offset;
+    const playOffset = Math.max(0, Math.min(charPos, state.fullText.length));
+    const text = state.fullText.slice(playOffset);
+    state.offset = playOffset;
+    state.segments = splitTextForTTSWithRanges(text, TTS_MAX_CHARS_PER_SEGMENT);
+    state.segmentIndex = 0;
+    void playAiSegmentRef.current(0);
+  };
+
+  const restartSystemSpeechAtCurrentPosition = () => {
+    if (webAiPlayingRef.current) return;
+    const fullText = webTextRef.current;
+    if (!fullText.trim()) return;
+    const charPos = readingCharIndexRef.current ?? 0;
+    const playOffset = Math.max(0, Math.min(charPos, fullText.length));
+    const text = fullText.slice(playOffset);
+    if (!text.trim()) return;
+    suppressOnEndRef.current = true;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    window.setTimeout(() => {
+      suppressOnEndRef.current = false;
+      const utterance = new SpeechSynthesisUtterance(text);
+      const selectedVoice = webVoicesRef.current.find((v) => v.name === webVoiceRef.current);
+      if (selectedVoice) utterance.voice = selectedVoice;
+      utterance.rate = webRateRef.current;
+      utterance.onstart = () => {
+        setWebIsSpeaking(true);
+        setWebIsPaused(false);
+        setReadingCharIndex(playOffset);
+        ttsStartAtRef.current = Date.now();
+        hasBoundaryEventRef.current = false;
+        if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
+        boundaryTickRef.current = window.setInterval(() => {
+          if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
+          if (hasBoundaryEventRef.current) return;
+          const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
+          const charsPerSec = Math.max(4, 8 * webRateRef.current);
+          const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
+          setReadingCharIndex((prev) => {
+            const next = Math.min(fullText.length, playOffset + estimatedIndex);
+            if (prev === null) return next;
+            return Math.max(prev, next);
+          });
+        }, 180);
+      };
+      utterance.onboundary = (event: SpeechSynthesisEvent) => {
+        if (typeof event.charIndex !== 'number') return;
+        hasBoundaryEventRef.current = true;
+        const next = Math.min(fullText.length, playOffset + event.charIndex);
+        setReadingCharIndex((prev) => (prev === null ? next : Math.max(prev, next)));
+      };
+      utterance.onend = () => {
+        if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
+        setWebIsSpeaking(false);
+        setWebIsPaused(false);
+        if (suppressOnEndRef.current) { suppressOnEndRef.current = false; return; }
+        void (async () => {
+          const moved = await tryAutoAdvanceToNextChapter();
+          if (!moved) setReadingCharIndex(null);
+        })();
+      };
+      utterance.onerror = () => { handleWebStop(); };
+      window.speechSynthesis.speak(utterance);
+    }, 60);
+  };
 
   const stopAiProgressLoop = () => {
     if (aiProgressRafRef.current !== null) {
@@ -799,8 +920,9 @@ const App: React.FC = () => {
     handleWebStop();
     pendingBrowserSpeechRef.current = null;
     const utterance = new SpeechSynthesisUtterance(text);
-    if (webVoice) { const selectedVoice = webVoices.find(v => v.name === webVoice); if (selectedVoice) utterance.voice = selectedVoice; }
-    utterance.rate = webRate;
+    const selectedVoice = webVoicesRef.current.find((v) => v.name === webVoiceRef.current);
+    if (selectedVoice) utterance.voice = selectedVoice;
+    utterance.rate = webRateRef.current;
     utterance.onstart = () => {
       setWebIsSpeaking(true);
       setWebIsPaused(false);
@@ -813,7 +935,7 @@ const App: React.FC = () => {
         if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
         if (hasBoundaryEventRef.current) return; // 一旦有 boundary 事件，改用事件同步，避免雙來源抖動
         const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
-        const charsPerSec = Math.max(4, 8 * webRate);
+        const charsPerSec = Math.max(4, 8 * webRateRef.current);
         const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
         setReadingCharIndex((prev) => {
           const next = Math.min(fullText.length, offset + estimatedIndex);
@@ -901,28 +1023,35 @@ const App: React.FC = () => {
       const ctx = initAudioContext();
       if (ctx.state === 'suspended') await ctx.resume();
       webAiPlayingRef.current = true;
+      aiPlaybackStateRef.current = { fullText, offset, segments, segmentIndex: 0, ctx };
       const playNextSegment = async (index: number) => {
         if (!webAiPlayingRef.current) { handleWebStop(); return; }
-        if (index >= segments.length) {
+        const playback = aiPlaybackStateRef.current;
+        if (!playback) return;
+        playback.segmentIndex = index;
+        const activeSegments = playback.segments;
+        const baseOffset = playback.offset;
+        if (index >= activeSegments.length) {
           const moved = await tryAutoAdvanceToNextChapter();
           if (!moved) handleWebStop();
           return;
         }
-        stopAiProgressLoop();
+        stopCurrentAiSegmentOnly();
         try {
-          const currentSegment = segments[index];
-          setReadingCharIndex(offset + currentSegment.start);
-          const base64Audio = await generateSpeech(currentSegment.text, voice);
+          const currentSegment = activeSegments[index];
+          setReadingCharIndex(baseOffset + currentSegment.start);
+          const base64Audio = await generateSpeech(currentSegment.text, voiceRef.current);
           setTtsRemainingChars(getRemainingTtsChars());
+          const rate = webRateRef.current;
           try {
             aiPlaybackModeRef.current = 'htmlaudio';
             const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
             const audio = new Audio(objectUrl);
-            audio.playbackRate = webRate;
+            audio.playbackRate = rate;
             htmlAudioRef.current = audio;
             audio.onended = () => {
               htmlAudioRef.current = null;
-              if (webAiPlayingRef.current) playNextSegment(index + 1);
+              if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
             };
             audio.onerror = () => {
               htmlAudioRef.current = null;
@@ -930,12 +1059,11 @@ const App: React.FC = () => {
             };
             await audio.play();
           } catch {
-            // 若 HTMLAudio 在少數桌面環境被策略或裝置攔截，再退回 WebAudio。
             const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
             aiPlaybackModeRef.current = 'webaudio';
             const source = ctx.createBufferSource();
             source.buffer = audioBuffer;
-            source.playbackRate.value = webRate;
+            source.playbackRate.value = rate;
             const gainNode = ctx.createGain();
             source.connect(gainNode);
             gainNode.connect(ctx.destination);
@@ -952,16 +1080,17 @@ const App: React.FC = () => {
             gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
             source.onended = () => {
               stopAiProgressLoop();
-              if (webAiPlayingRef.current) playNextSegment(index + 1);
+              if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
             };
             source.start(0);
             sourceRef.current = source;
             aiSegmentProgressRef.current = {
               ctx,
               startCtxTime: ctx.currentTime,
-              duration: audioBuffer.duration / Math.max(0.1, webRate),
-              charStart: offset + currentSegment.start,
-              charEnd: offset + currentSegment.end,
+              bufferDuration: audioBuffer.duration,
+              duration: audioBuffer.duration / Math.max(0.1, rate),
+              charStart: baseOffset + currentSegment.start,
+              charEnd: baseOffset + currentSegment.end,
             };
             startAiProgressLoop();
           }
@@ -969,6 +1098,7 @@ const App: React.FC = () => {
         } catch (e: unknown) {
           setWebError((prev) => (prev?.startsWith('AI 朗讀') ? null : prev));
           webAiPlayingRef.current = false;
+          aiPlaybackStateRef.current = null;
           stopAiProgressLoop();
           sourceRef.current = null;
           setWebAiLoading(false);
@@ -980,7 +1110,8 @@ const App: React.FC = () => {
           startBrowserSpeech(fullText, offset, text);
         }
       };
-      playNextSegment(0);
+      playAiSegmentRef.current = playNextSegment;
+      void playNextSegment(0);
     } else {
       startBrowserSpeech(fullText, offset, text);
     }
@@ -994,7 +1125,12 @@ const App: React.FC = () => {
     suppressOnEndRef.current = hasActivePlayback;
     pendingBrowserSpeechRef.current = null;
     stopAiProgressLoop();
-    if (webAiPlayingRef.current) { webAiPlayingRef.current = false; try { sourceRef.current?.stop(); } catch {} sourceRef.current = null; }
+    if (webAiPlayingRef.current) {
+      webAiPlayingRef.current = false;
+      aiPlaybackStateRef.current = null;
+      try { sourceRef.current?.stop(); } catch { /* ignore */ }
+      sourceRef.current = null;
+    }
     if (htmlAudioRef.current) {
       try { htmlAudioRef.current.pause(); } catch {}
       htmlAudioRef.current.src = '';
@@ -1048,6 +1184,48 @@ const App: React.FC = () => {
     setToastMessage(msg);
     toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 1800);
   };
+
+  const playbackSettingsMountedRef = useRef(false);
+  const prevVoiceRef = useRef(voice);
+  const prevWebRateRef = useRef(webRate);
+  const prevWebVoiceRef = useRef(webVoice);
+  useEffect(() => {
+    if (!playbackSettingsMountedRef.current) {
+      playbackSettingsMountedRef.current = true;
+      prevVoiceRef.current = voice;
+      prevWebRateRef.current = webRate;
+      prevWebVoiceRef.current = webVoice;
+      return;
+    }
+    const voiceChanged = prevVoiceRef.current !== voice;
+    const rateChanged = prevWebRateRef.current !== webRate;
+    const webVoiceChanged = prevWebVoiceRef.current !== webVoice;
+    prevVoiceRef.current = voice;
+    prevWebRateRef.current = webRate;
+    prevWebVoiceRef.current = webVoice;
+    if (!voiceChanged && !rateChanged && !webVoiceChanged) return;
+
+    const isPlaying = webAiPlayingRef.current
+      || (typeof window !== 'undefined' && window.speechSynthesis?.speaking);
+    if (!isPlaying) return;
+
+    if (webAiPlayingRef.current) {
+      if (rateChanged && !voiceChanged) {
+        applyLivePlaybackRate();
+        return;
+      }
+      if (voiceChanged) {
+        restartAiPlaybackAtCurrentPosition();
+        showToast('已切換 AI 語音，從目前位置重新朗讀');
+      }
+      return;
+    }
+
+    if (voiceChanged || rateChanged || webVoiceChanged) {
+      restartSystemSpeechAtCurrentPosition();
+      showToast('已切換語音／速度，從目前位置重新朗讀');
+    }
+  }, [voice, webRate, webVoice]);
 
   const estimateCurrentLineNumber = (textarea: HTMLTextAreaElement, charIndex: number | null): number => {
     if (charIndex !== null) {
