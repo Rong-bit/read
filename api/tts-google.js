@@ -130,12 +130,13 @@ const resolveVoice = (voiceName) => {
   }
 
   const alias = raw.toLowerCase();
+  // 台灣（cmn-TW）與華語（cmn-CN）分開對應，兩者皆用 Standard 省費
   const aliasMap = {
-    aoede: `${languageCode}-Standard-A`,
-    kore: `${languageCode}-Standard-B`,
-    puck: `${languageCode}-Standard-C`,
-    charon: `${languageCode}-Standard-B`,
-    fenrir: `${languageCode}-Standard-C`,
+    aoede: 'cmn-TW-Standard-A',
+    kore: 'cmn-TW-Standard-B',
+    puck: 'cmn-TW-Standard-C',
+    fenrir: 'cmn-CN-Standard-A',
+    charon: 'cmn-CN-Standard-B',
   };
 
   let resolvedName = aliasMap[alias] || defaultVoice;
