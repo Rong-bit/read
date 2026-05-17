@@ -19,9 +19,9 @@ interface AudioControlsProps {
 }
 
 const VOICES: VoiceOption[] = [
-  { id: 'Aoede', name: '女聲（標準）', gender: 'female' },
-  { id: 'Kore', name: '男聲 A（標準）', gender: 'male' },
-  { id: 'Puck', name: '男聲 B（標準）', gender: 'male' },
+  { id: 'Aoede', name: '華語・女聲（標準）', gender: 'female' },
+  { id: 'Kore', name: '華語・男聲 A（標準）', gender: 'male' },
+  { id: 'Puck', name: '華語・男聲 B（標準）', gender: 'male' },
 ];
 
 const formatTime = (seconds: number) => {
