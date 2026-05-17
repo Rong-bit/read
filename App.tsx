@@ -15,10 +15,26 @@ const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 const STORAGE_KEY_AUTO_NEXT = 'gemini_reader_auto_next';
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5] as const;
 const AI_VOICE_OPTIONS = [
-  { id: 'Aoede', name: '女聲（標準・免費額度）' },
-  { id: 'Kore', name: '男聲 A（標準・免費額度）' },
-  { id: 'Puck', name: '男聲 B（標準・免費額度）' },
+  { id: 'Aoede', name: '華語・女聲（標準）' },
+  { id: 'Kore', name: '華語・男聲 A（標準）' },
+  { id: 'Puck', name: '華語・男聲 B（標準）' },
 ] as const;
+
+const isChineseSystemVoice = (v: SpeechSynthesisVoice): boolean => {
+  const lang = (v.lang || '').toLowerCase();
+  const name = v.name || '';
+  return lang.startsWith('zh')
+    || /華語|中文|國語|粤|粵|台湾|臺灣|taiwan|chinese|mandarin|cantonese/i.test(name);
+};
+
+const pickDefaultChineseVoice = (voices: SpeechSynthesisVoice[]): string => {
+  if (voices.length === 0) return '';
+  const prefer = voices.find((v) => /華語/i.test(v.name))
+    || voices.find((v) => v.lang.toLowerCase().startsWith('zh-tw'))
+    || voices.find((v) => v.lang.toLowerCase().startsWith('zh'))
+    || voices[0];
+  return prefer?.name || '';
+};
 type BookmarkData = {
   id: string;
   title: string;
@@ -182,10 +198,17 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   setVoice,
   useAiReading = true,
   setUseAiReading,
+  webVoice = '',
+  setWebVoice,
+  webVoices = [],
   autoNextChapter = true,
   setAutoNextChapter,
   onAutoNextToggle
-}) => (
+}) => {
+  const chineseSystemVoices = webVoices.filter(isChineseSystemVoice);
+  const systemVoices = chineseSystemVoices.length > 0 ? chineseSystemVoices : webVoices;
+
+  return (
   <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900/95 border-l border-white/15 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
     <div className="p-4 border-b border-white/15 flex items-center justify-between">
       <span className="font-bold text-slate-100 text-base">選單</span>
@@ -210,11 +233,7 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       </button>
       <button
         className={`w-full text-left p-3.5 rounded-lg text-base font-bold border ${useAiReading ? 'bg-indigo-600 text-white border-indigo-300/40 hover:bg-indigo-500' : 'bg-slate-700 text-slate-100 border-white/25 hover:bg-slate-600'}`}
-        onClick={() => {
-          const next = !useAiReading;
-          setUseAiReading?.(next);
-          if (next) setTtsRemainingChars(getRemainingTtsChars());
-        }}
+        onClick={() => setUseAiReading?.(!useAiReading)}
       >
         朗讀模式：{useAiReading ? 'AI（標準語音）' : '系統語音（免費）'}
       </button>
@@ -225,7 +244,7 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       ) : null}
       {useAiReading ? (
         <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
-          <div className="text-xs text-slate-300 mb-2">AI 語音</div>
+          <div className="text-xs text-slate-300 mb-2">AI 華語語音</div>
           <div className="grid grid-cols-1 gap-2">
             {AI_VOICE_OPTIONS.map((v) => (
               <button
@@ -238,7 +257,26 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
             ))}
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
+          <div className="text-xs text-slate-300 mb-2">系統華語語音</div>
+          {systemVoices.length > 0 ? (
+            <select
+              value={webVoice}
+              onChange={(e) => setWebVoice?.(e.target.value)}
+              className="w-full bg-slate-700 text-slate-100 text-sm rounded-md border border-white/20 px-2 py-2"
+            >
+              {systemVoices.map((v) => (
+                <option key={`${v.name}-${v.lang}`} value={v.name}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs text-slate-400">載入語音中…若列表為空，請重新整理頁面。</p>
+          )}
+        </div>
+      )}
       <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
         <div className="text-xs text-slate-300 mb-2">播放速度</div>
         <div className="grid grid-cols-4 gap-2">
@@ -255,7 +293,8 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       </div>
     </div>
   </div>
-);
+  );
+};
 
 const App: React.FC = () => {
   const [novel, setNovel] = useState<NovelContent | null>(null);
@@ -487,10 +526,31 @@ const App: React.FC = () => {
       }
     }
 
+    const savedWebVoice = localStorage.getItem(STORAGE_KEY_WEB_VOICE);
+    if (savedWebVoice) setWebVoice(savedWebVoice);
+
     const loadVoices = () => setWebVoices(window.speechSynthesis.getVoices());
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
+
+  useEffect(() => {
+    if (webVoice) localStorage.setItem(STORAGE_KEY_WEB_VOICE, webVoice);
+  }, [webVoice]);
+
+  useEffect(() => {
+    if (webVoices.length === 0) return;
+    const chinese = webVoices.filter(isChineseSystemVoice);
+    const pool = chinese.length > 0 ? chinese : webVoices;
+    if (webVoice && pool.some((v) => v.name === webVoice)) return;
+    const saved = localStorage.getItem(STORAGE_KEY_WEB_VOICE);
+    if (saved && pool.some((v) => v.name === saved)) {
+      setWebVoice(saved);
+      return;
+    }
+    const pick = pickDefaultChineseVoice(pool);
+    if (pick) setWebVoice(pick);
+  }, [webVoices, webVoice]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_USE_AI_READING, useAiReading ? 'true' : 'false');
@@ -1162,7 +1222,7 @@ const App: React.FC = () => {
             <div className="space-y-8">
               <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">字體大小 ({fontSize}px)</label><input type="range" min="16" max="40" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
               <div>
-                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 語音</label>
+                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 華語語音</label>
                 <div className="grid grid-cols-1 gap-2">
                   {AI_VOICE_OPTIONS.map((v) => (
                     <button
