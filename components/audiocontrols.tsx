@@ -19,11 +19,11 @@ interface AudioControlsProps {
 }
 
 const VOICES: VoiceOption[] = [
-  { id: 'Kore', name: 'Kore (男)', gender: 'male' },
-  { id: 'Puck', name: 'Puck (男)', gender: 'male' },
-  { id: 'Charon', name: 'Charon (男)', gender: 'male' },
-  { id: 'Fenrir', name: 'Fenrir (男)', gender: 'male' },
-  { id: 'Aoede', name: 'Aoede (女)', gender: 'female' },
+  { id: 'Kore', name: '男聲 A (Wavenet)', gender: 'male' },
+  { id: 'Puck', name: '男聲 B (Wavenet)', gender: 'male' },
+  { id: 'Charon', name: '男聲 C (Neural2)', gender: 'male' },
+  { id: 'Fenrir', name: '男聲 D (Neural2)', gender: 'male' },
+  { id: 'Aoede', name: '女聲 (Wavenet)', gender: 'female' },
 ];
 
 const formatTime = (seconds: number) => {
