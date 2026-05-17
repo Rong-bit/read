@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { fetchNovelFromUrl } from './scraper.js';
+import ttsGoogleHandler from './api/tts-google.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // 抓取小說內容端點
+app.post('/api/tts-google', (req, res) => ttsGoogleHandler(req, res));
+
 app.post('/api/fetch-novel', async (req, res) => {
   try {
     const { url, currentTitle } = req.body;
