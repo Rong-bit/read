@@ -552,8 +552,12 @@ const App: React.FC = () => {
       sourceRef.current = null;
     }
     if (htmlAudioRef.current) {
-      try { htmlAudioRef.current.pause(); } catch { /* ignore */ }
-      htmlAudioRef.current.src = '';
+      const audio = htmlAudioRef.current;
+      audio.onended = null;
+      audio.onerror = null;
+      try { audio.pause(); } catch { /* ignore */ }
+      audio.removeAttribute('src');
+      try { audio.load(); } catch { /* ignore */ }
       htmlAudioRef.current = null;
     }
   };
@@ -1159,23 +1163,49 @@ const App: React.FC = () => {
         }
         setTtsRemainingChars(getRemainingTtsChars());
         const rate = webRateRef.current;
+        let usedWebAudioFallback = false;
         try {
           aiPlaybackModeRef.current = 'htmlaudio';
           const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
           const audio = new Audio(objectUrl);
           audio.playbackRate = rate;
+          const playToken = aiEpoch;
           htmlAudioRef.current = audio;
-          audio.onended = () => {
-            htmlAudioRef.current = null;
-            if (isActiveAi()) void playAiSegmentRef.current(index + 1);
-          };
-          audio.onerror = () => {
-            htmlAudioRef.current = null;
-            throw new Error('HTMLAudio 播放失敗');
-          };
           if (!isActiveAi()) return;
-          await audio.play();
+
+          await new Promise<void>((resolve, reject) => {
+            audio.onended = () => {
+              htmlAudioRef.current = null;
+              resolve();
+            };
+            audio.onerror = () => {
+              htmlAudioRef.current = null;
+              if (!isActiveAi() || playToken !== aiPlaybackEpochRef.current) {
+                resolve();
+                return;
+              }
+              reject(new Error('HTMLAudio 播放失敗'));
+            };
+            void audio.play().catch((err) => {
+              htmlAudioRef.current = null;
+              if (!isActiveAi() || playToken !== aiPlaybackEpochRef.current) {
+                resolve();
+                return;
+              }
+              reject(err);
+            });
+          });
+
+          if (isActiveAi() && playToken === aiPlaybackEpochRef.current) {
+            void playAiSegmentRef.current(index + 1);
+          }
+          setWebIsSpeaking(true);
+          setWebIsPaused(false);
+          setWebAiLoading(false);
+          return;
         } catch {
+          if (!isActiveAi()) return;
+          usedWebAudioFallback = true;
           if (!isActiveAi()) return;
           const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
           if (!isActiveAi()) return;
@@ -1213,6 +1243,7 @@ const App: React.FC = () => {
           };
           startAiProgressLoop();
         }
+        if (!usedWebAudioFallback) return;
         setWebIsSpeaking(true);
         setWebIsPaused(false);
         setWebAiLoading(false);
