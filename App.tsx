@@ -14,22 +14,53 @@ const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 const STORAGE_KEY_AUTO_NEXT = 'gemini_reader_auto_next';
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5] as const;
-const AI_VOICE_OPTIONS = [
-  { id: 'Aoede', name: '華語・女聲（標準）' },
-  { id: 'Kore', name: '華語・男聲 A（標準）' },
-  { id: 'Puck', name: '華語・男聲 B（標準）' },
+const AI_TAIWAN_VOICE_OPTIONS = [
+  { id: 'Aoede', name: '女聲（標準）' },
+  { id: 'Kore', name: '男聲 A（標準）' },
+  { id: 'Puck', name: '男聲 B（標準）' },
 ] as const;
+
+const AI_HUAYU_VOICE_OPTIONS = [
+  { id: 'Fenrir', name: '女聲（標準）' },
+  { id: 'Charon', name: '男聲（標準）' },
+] as const;
+
+const AI_VOICE_OPTIONS = [...AI_TAIWAN_VOICE_OPTIONS, ...AI_HUAYU_VOICE_OPTIONS];
 
 const isChineseSystemVoice = (v: SpeechSynthesisVoice): boolean => {
   const lang = (v.lang || '').toLowerCase();
   const name = v.name || '';
   return lang.startsWith('zh')
-    || /華語|中文|國語|粤|粵|台湾|臺灣|taiwan|chinese|mandarin|cantonese/i.test(name);
+    || /華語|中文|國語|台灣語|台湾语|台語|臺語|粤|粵|台湾|臺灣|taiwan|chinese|mandarin|cantonese|hokkien|minnan/i.test(name);
+};
+
+const isTaiwanSystemVoice = (v: SpeechSynthesisVoice): boolean => {
+  const lang = (v.lang || '').toLowerCase();
+  const name = v.name || '';
+  return lang === 'zh-tw' || lang.startsWith('zh-tw')
+    || /台灣語|台湾语|台灣|臺灣|taiwan|traditional.*taiwan|國語.*台灣/i.test(name);
+};
+
+const isHuayuSystemVoice = (v: SpeechSynthesisVoice): boolean => {
+  if (isTaiwanSystemVoice(v)) return false;
+  const lang = (v.lang || '').toLowerCase();
+  const name = v.name || '';
+  return lang === 'zh-cn' || lang.startsWith('zh-cn')
+    || /華語|华语|普通话|普通話|国语|國語(?!.*台)|mandarin|putong/i.test(name);
+};
+
+const sortSystemVoicesForDisplay = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] => {
+  const taiwan = voices.filter(isTaiwanSystemVoice);
+  const huayu = voices.filter(isHuayuSystemVoice);
+  const other = voices.filter((v) => !isTaiwanSystemVoice(v) && !isHuayuSystemVoice(v));
+  return [...taiwan, ...huayu, ...other];
 };
 
 const pickDefaultChineseVoice = (voices: SpeechSynthesisVoice[]): string => {
   if (voices.length === 0) return '';
-  const prefer = voices.find((v) => /華語/i.test(v.name))
+  const prefer = voices.find((v) => /台灣語/i.test(v.name))
+    || voices.find(isTaiwanSystemVoice)
+    || voices.find((v) => /華語/i.test(v.name))
     || voices.find((v) => v.lang.toLowerCase().startsWith('zh-tw'))
     || voices.find((v) => v.lang.toLowerCase().startsWith('zh'))
     || voices[0];
@@ -206,7 +237,9 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   onAutoNextToggle
 }) => {
   const chineseSystemVoices = webVoices.filter(isChineseSystemVoice);
-  const systemVoices = chineseSystemVoices.length > 0 ? chineseSystemVoices : webVoices;
+  const systemVoices = sortSystemVoicesForDisplay(
+    chineseSystemVoices.length > 0 ? chineseSystemVoices : webVoices
+  );
 
   return (
   <div className={`fixed top-0 right-0 h-full w-[300px] bg-slate-900/95 border-l border-white/15 z-[160] transition-transform duration-500 ease-out shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -243,40 +276,79 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
         </p>
       ) : null}
       {useAiReading ? (
+        <>
         <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
-          <div className="text-xs text-slate-300 mb-2">AI 華語語音</div>
+          <div className="text-xs text-slate-300 mb-2">AI 台灣國語（cmn-TW）</div>
           <div className="grid grid-cols-1 gap-2">
-            {AI_VOICE_OPTIONS.map((v) => (
+            {AI_TAIWAN_VOICE_OPTIONS.map((v) => (
               <button
                 key={v.id}
                 className={`py-2 px-3 rounded-md text-sm font-semibold border text-left ${voice === v.id ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-slate-700 text-slate-100 border-white/20 hover:bg-slate-600'}`}
                 onClick={() => setVoice?.(v.id)}
               >
-                {v.name}
+                台灣・{v.name}
               </button>
             ))}
           </div>
         </div>
-      ) : (
+          <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
+            <div className="text-xs text-slate-300 mb-2">AI 華語（cmn-CN）</div>
+            <div className="grid grid-cols-1 gap-2">
+              {AI_HUAYU_VOICE_OPTIONS.map((v) => (
+                <button
+                  key={v.id}
+                  className={`py-2 px-3 rounded-md text-sm font-semibold border text-left ${voice === v.id ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-slate-700 text-slate-100 border-white/20 hover:bg-slate-600'}`}
+                  onClick={() => setVoice?.(v.id)}
+                >
+                  華語・{v.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
+      {!useAiReading ? (
         <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
-          <div className="text-xs text-slate-300 mb-2">系統華語語音</div>
+          <div className="text-xs text-slate-300 mb-2">系統語音</div>
           {systemVoices.length > 0 ? (
             <select
               value={webVoice}
               onChange={(e) => setWebVoice?.(e.target.value)}
               className="w-full bg-slate-700 text-slate-100 text-sm rounded-md border border-white/20 px-2 py-2"
             >
-              {systemVoices.map((v) => (
-                <option key={`${v.name}-${v.lang}`} value={v.name}>
-                  {v.name}
-                </option>
-              ))}
+              {systemVoices.some(isTaiwanSystemVoice) ? (
+                <optgroup label="台灣語音">
+                  {systemVoices.filter(isTaiwanSystemVoice).map((v) => (
+                    <option key={`tw-${v.name}-${v.lang}`} value={v.name}>
+                      {v.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {systemVoices.some(isHuayuSystemVoice) ? (
+                <optgroup label="華語語音">
+                  {systemVoices.filter(isHuayuSystemVoice).map((v) => (
+                    <option key={`hy-${v.name}-${v.lang}`} value={v.name}>
+                      {v.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {systemVoices.some((v) => !isTaiwanSystemVoice(v) && !isHuayuSystemVoice(v)) ? (
+                <optgroup label="其他中文語音">
+                  {systemVoices.filter((v) => !isTaiwanSystemVoice(v) && !isHuayuSystemVoice(v)).map((v) => (
+                    <option key={`zh-${v.name}-${v.lang}`} value={v.name}>
+                      {v.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
             </select>
           ) : (
             <p className="text-xs text-slate-400">載入語音中…若列表為空，請重新整理頁面。</p>
           )}
         </div>
-      )}
+      ) : null}
       <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
         <div className="text-xs text-slate-300 mb-2">播放速度</div>
         <div className="grid grid-cols-4 gap-2">
@@ -1222,15 +1294,29 @@ const App: React.FC = () => {
             <div className="space-y-8">
               <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">字體大小 ({fontSize}px)</label><input type="range" min="16" max="40" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
               <div>
-                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 華語語音</label>
+                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 台灣國語</label>
                 <div className="grid grid-cols-1 gap-2">
-                  {AI_VOICE_OPTIONS.map((v) => (
+                  {AI_TAIWAN_VOICE_OPTIONS.map((v) => (
                     <button
                       key={v.id}
                       onClick={() => setVoice(v.id)}
                       className={`py-3 px-4 rounded-xl border text-left font-semibold transition-all ${voice === v.id ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-400'}`}
                     >
-                      {v.name}
+                      台灣・{v.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 華語</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {AI_HUAYU_VOICE_OPTIONS.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setVoice(v.id)}
+                      className={`py-3 px-4 rounded-xl border text-left font-semibold transition-all ${voice === v.id ? 'border-emerald-500 bg-emerald-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-400'}`}
+                    >
+                      華語・{v.name}
                     </button>
                   ))}
                 </div>
