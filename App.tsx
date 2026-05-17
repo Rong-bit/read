@@ -25,7 +25,8 @@ const AI_HUAYU_VOICE_OPTIONS = [
   { id: 'Charon', name: '男聲（標準）' },
 ] as const;
 
-const AI_VOICE_OPTIONS = [...AI_TAIWAN_VOICE_OPTIONS, ...AI_HUAYU_VOICE_OPTIONS];
+const VOICE_SELECT_CLASS =
+  'w-full bg-slate-700 text-slate-100 text-sm rounded-md border border-white/20 px-2 py-2 focus:outline-none focus:border-indigo-400';
 
 const isChineseSystemVoice = (v: SpeechSynthesisVoice): boolean => {
   const lang = (v.lang || '').toLowerCase();
@@ -276,36 +277,29 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
         </p>
       ) : null}
       {useAiReading ? (
-        <>
         <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
-          <div className="text-xs text-slate-300 mb-2">AI 台灣國語（cmn-TW）</div>
-          <div className="grid grid-cols-1 gap-2">
-            {AI_TAIWAN_VOICE_OPTIONS.map((v) => (
-              <button
-                key={v.id}
-                className={`py-2 px-3 rounded-md text-sm font-semibold border text-left ${voice === v.id ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-slate-700 text-slate-100 border-white/20 hover:bg-slate-600'}`}
-                onClick={() => setVoice?.(v.id)}
-              >
-                台灣・{v.name}
-              </button>
-            ))}
-          </div>
-        </div>
-          <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
-            <div className="text-xs text-slate-300 mb-2">AI 華語（cmn-CN）</div>
-            <div className="grid grid-cols-1 gap-2">
-              {AI_HUAYU_VOICE_OPTIONS.map((v) => (
-                <button
-                  key={v.id}
-                  className={`py-2 px-3 rounded-md text-sm font-semibold border text-left ${voice === v.id ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-slate-700 text-slate-100 border-white/20 hover:bg-slate-600'}`}
-                  onClick={() => setVoice?.(v.id)}
-                >
-                  華語・{v.name}
-                </button>
+          <div className="text-xs text-slate-300 mb-2">AI 語音</div>
+          <select
+            value={voice}
+            onChange={(e) => setVoice?.(e.target.value)}
+            className={VOICE_SELECT_CLASS}
+          >
+            <optgroup label="台灣">
+              {AI_TAIWAN_VOICE_OPTIONS.map((v) => (
+                <option key={v.id} value={v.id}>
+                  台灣・{v.name}
+                </option>
               ))}
-            </div>
-          </div>
-        </>
+            </optgroup>
+            <optgroup label="華語">
+              {AI_HUAYU_VOICE_OPTIONS.map((v) => (
+                <option key={v.id} value={v.id}>
+                  華語・{v.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </div>
       ) : null}
       {!useAiReading ? (
         <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
@@ -1472,32 +1466,27 @@ const App: React.FC = () => {
             <div className="space-y-8">
               <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">字體大小 ({fontSize}px)</label><input type="range" min="16" max="40" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
               <div>
-                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 台灣國語</label>
-                <div className="grid grid-cols-1 gap-2">
-                  {AI_TAIWAN_VOICE_OPTIONS.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => setVoice(v.id)}
-                      className={`py-3 px-4 rounded-xl border text-left font-semibold transition-all ${voice === v.id ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-400'}`}
-                    >
-                      台灣・{v.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 華語</label>
-                <div className="grid grid-cols-1 gap-2">
-                  {AI_HUAYU_VOICE_OPTIONS.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => setVoice(v.id)}
-                      className={`py-3 px-4 rounded-xl border text-left font-semibold transition-all ${voice === v.id ? 'border-emerald-500 bg-emerald-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-400'}`}
-                    >
-                      華語・{v.name}
-                    </button>
-                  ))}
-                </div>
+                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 語音</label>
+                <select
+                  value={voice}
+                  onChange={(e) => setVoice(e.target.value)}
+                  className={VOICE_SELECT_CLASS}
+                >
+                  <optgroup label="台灣">
+                    {AI_TAIWAN_VOICE_OPTIONS.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        台灣・{v.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="華語">
+                    {AI_HUAYU_VOICE_OPTIONS.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        華語・{v.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
               </div>
               <div><label className="block text-sm font-bold text-slate-400 mb-4 uppercase tracking-widest">閱讀主題</label><div className="grid grid-cols-3 gap-3">{['dark', 'sepia', 'slate'].map(t => (<button key={t} onClick={() => {setTheme(t as any); setIsSettingsOpen(false);}} className={`py-4 rounded-2xl border transition-all font-bold ${theme === t ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-500'}`}>{t === 'dark' ? '深邃黑' : t === 'sepia' ? '羊皮紙' : '岩板灰'}</button>))}</div></div>
             </div>
