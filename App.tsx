@@ -440,6 +440,8 @@ const App: React.FC = () => {
   } | null>(null);
   const playAiSegmentRef = useRef<(index: number) => Promise<void>>(async () => {});
   const systemSpeechEpochRef = useRef(0);
+  const aiPlaybackEpochRef = useRef(0);
+  const useAiReadingRef = useRef(useAiReading);
   const systemSpeechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const systemSpeechIdlePollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const systemUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -485,6 +487,7 @@ const App: React.FC = () => {
   useEffect(() => { readingCharIndexRef.current = readingCharIndex; }, [readingCharIndex]);
   useEffect(() => { webVoicesRef.current = webVoices; }, [webVoices]);
   useEffect(() => { webIsSpeakingRef.current = webIsSpeaking; }, [webIsSpeaking]);
+  useEffect(() => { useAiReadingRef.current = useAiReading; }, [useAiReading]);
 
   const clearSystemSpeechTimer = () => {
     if (systemSpeechTimerRef.current != null) {
@@ -551,6 +554,7 @@ const App: React.FC = () => {
   };
 
   const stopAiPlaybackOnly = () => {
+    aiPlaybackEpochRef.current += 1;
     webAiPlayingRef.current = false;
     aiPlaybackStateRef.current = null;
     stopAiProgressLoop();
@@ -1095,15 +1099,22 @@ const App: React.FC = () => {
   const beginAiPlaybackAtOffset = async (fullText: string, offset: number) => {
     const text = fullText.slice(offset);
     if (!text.trim()) return;
+    aiPlaybackEpochRef.current += 1;
+    const aiEpoch = aiPlaybackEpochRef.current;
+    const isActiveAi = () => webAiPlayingRef.current && aiEpoch === aiPlaybackEpochRef.current;
     suppressOnEndRef.current = false;
     const segments = splitTextForTTSWithRanges(text, TTS_MAX_CHARS_PER_SEGMENT);
     setWebAiLoading(true);
     const ctx = initAudioContext();
     if (ctx.state === 'suspended') await ctx.resume();
+    if (!useAiReadingRef.current || aiEpoch !== aiPlaybackEpochRef.current) {
+      setWebAiLoading(false);
+      return;
+    }
     webAiPlayingRef.current = true;
     aiPlaybackStateRef.current = { fullText, offset, segments, segmentIndex: 0, ctx };
     const playNextSegment = async (index: number) => {
-      if (!webAiPlayingRef.current) return;
+      if (!isActiveAi()) return;
       const playback = aiPlaybackStateRef.current;
       if (!playback) return;
       playback.segmentIndex = index;
@@ -1119,7 +1130,10 @@ const App: React.FC = () => {
         const currentSegment = activeSegments[index];
         setReadingCharIndex(baseOffset + currentSegment.start);
         const base64Audio = await generateSpeech(currentSegment.text, voiceRef.current);
-        if (!webAiPlayingRef.current) return;
+        if (!isActiveAi()) return;
+        if (typeof window !== 'undefined' && window.speechSynthesis?.speaking) {
+          window.speechSynthesis.cancel();
+        }
         setTtsRemainingChars(getRemainingTtsChars());
         const rate = webRateRef.current;
         try {
@@ -1130,17 +1144,18 @@ const App: React.FC = () => {
           htmlAudioRef.current = audio;
           audio.onended = () => {
             htmlAudioRef.current = null;
-            if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
+            if (isActiveAi()) void playAiSegmentRef.current(index + 1);
           };
           audio.onerror = () => {
             htmlAudioRef.current = null;
             throw new Error('HTMLAudio 播放失敗');
           };
+          if (!isActiveAi()) return;
           await audio.play();
         } catch {
-          if (!webAiPlayingRef.current) return;
+          if (!isActiveAi()) return;
           const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-          if (!webAiPlayingRef.current) return;
+          if (!isActiveAi()) return;
           aiPlaybackModeRef.current = 'webaudio';
           const source = ctx.createBufferSource();
           source.buffer = audioBuffer;
@@ -1161,7 +1176,7 @@ const App: React.FC = () => {
           gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
           source.onended = () => {
             stopAiProgressLoop();
-            if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
+            if (isActiveAi()) void playAiSegmentRef.current(index + 1);
           };
           source.start(0);
           sourceRef.current = source;
@@ -1179,7 +1194,7 @@ const App: React.FC = () => {
         setWebIsPaused(false);
         setWebAiLoading(false);
       } catch (e: unknown) {
-        if (!webAiPlayingRef.current) return;
+        if (!isActiveAi()) return;
         setWebError((prev) => (prev?.startsWith('AI 朗讀') ? null : prev));
         webAiPlayingRef.current = false;
         aiPlaybackStateRef.current = null;
@@ -1198,13 +1213,28 @@ const App: React.FC = () => {
     void playNextSegment(0);
   };
 
-  const switchToAiSpeechAtCurrentPosition = () => {
+  const switchToAiSpeechAtCurrentPosition = async () => {
     stopSystemSpeechOnly();
+    const stopEpoch = systemSpeechEpochRef.current;
+    setWebIsSpeaking(false);
+    setWebIsPaused(false);
+
+    await waitForSystemSpeechIdle(stopEpoch);
+    if (!useAiReadingRef.current) return;
+
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 50);
+    });
+    if (!useAiReadingRef.current) return;
+
     const fullText = webTextRef.current;
     if (!fullText.trim()) return;
     const charPos = readingCharIndexRef.current ?? 0;
     const playOffset = Math.max(0, Math.min(charPos, fullText.length));
-    void beginAiPlaybackAtOffset(fullText, playOffset);
+    await beginAiPlaybackAtOffset(fullText, playOffset);
   };
 
   const handleWebPlayPause = async () => {
@@ -1251,6 +1281,7 @@ const App: React.FC = () => {
 
   const handleWebStop = (resetReadingPosition: boolean = false) => {
     systemSpeechEpochRef.current += 1;
+    aiPlaybackEpochRef.current += 1;
     systemUtteranceRef.current = null;
     clearAllSystemSpeechSchedules();
     const hasActiveSystemSpeech = typeof window !== 'undefined'
@@ -1410,7 +1441,7 @@ const App: React.FC = () => {
       return;
     }
     if (!prevAi && useAiReading) {
-      switchToAiSpeechAtCurrentPosition();
+      void switchToAiSpeechAtCurrentPosition();
       showToast('已切換為 AI 語音，從目前位置重新朗讀');
     }
   }, [useAiReading]);
