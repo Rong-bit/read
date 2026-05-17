@@ -440,6 +440,11 @@ const App: React.FC = () => {
   } | null>(null);
   const playAiSegmentRef = useRef<(index: number) => Promise<void>>(async () => {});
   const systemSpeechEpochRef = useRef(0);
+  const systemSpeechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const systemSpeechIdlePollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const systemUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const webIsSpeakingRef = useRef(false);
+  const playbackRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { voiceRef.current = voice; }, [voice]);
   useEffect(() => { webRateRef.current = webRate; }, [webRate]);
@@ -479,6 +484,58 @@ const App: React.FC = () => {
 
   useEffect(() => { readingCharIndexRef.current = readingCharIndex; }, [readingCharIndex]);
   useEffect(() => { webVoicesRef.current = webVoices; }, [webVoices]);
+  useEffect(() => { webIsSpeakingRef.current = webIsSpeaking; }, [webIsSpeaking]);
+
+  const clearSystemSpeechTimer = () => {
+    if (systemSpeechTimerRef.current != null) {
+      window.clearTimeout(systemSpeechTimerRef.current);
+      systemSpeechTimerRef.current = null;
+    }
+  };
+
+  const clearSystemSpeechIdlePoll = () => {
+    if (systemSpeechIdlePollRef.current != null) {
+      window.clearTimeout(systemSpeechIdlePollRef.current);
+      systemSpeechIdlePollRef.current = null;
+    }
+  };
+
+  const clearAllSystemSpeechSchedules = () => {
+    clearSystemSpeechTimer();
+    clearSystemSpeechIdlePoll();
+    if (playbackRestartTimerRef.current != null) {
+      window.clearTimeout(playbackRestartTimerRef.current);
+      playbackRestartTimerRef.current = null;
+    }
+  };
+
+  const waitForSystemSpeechIdle = (epoch: number): Promise<void> => {
+    return new Promise((resolve) => {
+      const deadline = Date.now() + 2800;
+      const poll = () => {
+        if (epoch !== systemSpeechEpochRef.current) {
+          clearSystemSpeechIdlePoll();
+          resolve();
+          return;
+        }
+        const syn = window.speechSynthesis;
+        syn.cancel();
+        if (!syn.speaking && !syn.pending) {
+          clearSystemSpeechIdlePoll();
+          resolve();
+          return;
+        }
+        if (Date.now() >= deadline) {
+          clearSystemSpeechIdlePoll();
+          resolve();
+          return;
+        }
+        systemSpeechIdlePollRef.current = window.setTimeout(poll, 45);
+      };
+      clearSystemSpeechIdlePoll();
+      poll();
+    });
+  };
 
   const stopCurrentAiSegmentOnly = () => {
     stopAiProgressLoop();
@@ -537,8 +594,10 @@ const App: React.FC = () => {
     const text = fullText.slice(playOffset);
     if (!text.trim()) return;
 
+    clearAllSystemSpeechSchedules();
     systemSpeechEpochRef.current += 1;
     const epoch = systemSpeechEpochRef.current;
+    systemUtteranceRef.current = null;
 
     if (boundaryTickRef.current) {
       window.clearInterval(boundaryTickRef.current);
@@ -548,7 +607,18 @@ const App: React.FC = () => {
     suppressOnEndRef.current = true;
     window.speechSynthesis.cancel();
 
-    const startSpeak = () => {
+    const startSpeak = async () => {
+      if (epoch !== systemSpeechEpochRef.current) return;
+      await waitForSystemSpeechIdle(epoch);
+      if (epoch !== systemSpeechEpochRef.current) return;
+
+      window.speechSynthesis.cancel();
+      await new Promise<void>((resolve) => {
+        systemSpeechTimerRef.current = window.setTimeout(() => {
+          systemSpeechTimerRef.current = null;
+          resolve();
+        }, 40);
+      });
       if (epoch !== systemSpeechEpochRef.current) return;
 
       const voices = window.speechSynthesis.getVoices();
@@ -561,9 +631,10 @@ const App: React.FC = () => {
         utterance.lang = selectedVoice.lang || 'zh-TW';
       }
       utterance.rate = webRateRef.current;
+      systemUtteranceRef.current = utterance;
 
       utterance.onstart = () => {
-        if (epoch !== systemSpeechEpochRef.current) return;
+        if (epoch !== systemSpeechEpochRef.current || systemUtteranceRef.current !== utterance) return;
         suppressOnEndRef.current = false;
         setWebIsSpeaking(true);
         setWebIsPaused(false);
@@ -572,7 +643,7 @@ const App: React.FC = () => {
         hasBoundaryEventRef.current = false;
         if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
         boundaryTickRef.current = window.setInterval(() => {
-          if (epoch !== systemSpeechEpochRef.current) return;
+          if (epoch !== systemSpeechEpochRef.current || systemUtteranceRef.current !== utterance) return;
           if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
           if (hasBoundaryEventRef.current) return;
           const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
@@ -587,7 +658,7 @@ const App: React.FC = () => {
       };
 
       utterance.onboundary = (event: SpeechSynthesisEvent) => {
-        if (epoch !== systemSpeechEpochRef.current) return;
+        if (epoch !== systemSpeechEpochRef.current || systemUtteranceRef.current !== utterance) return;
         if (typeof event.charIndex !== 'number') return;
         hasBoundaryEventRef.current = true;
         const next = Math.min(fullText.length, playOffset + event.charIndex);
@@ -595,7 +666,8 @@ const App: React.FC = () => {
       };
 
       utterance.onend = () => {
-        if (epoch !== systemSpeechEpochRef.current) return;
+        if (epoch !== systemSpeechEpochRef.current || systemUtteranceRef.current !== utterance) return;
+        systemUtteranceRef.current = null;
         if (boundaryTickRef.current) {
           window.clearInterval(boundaryTickRef.current);
           boundaryTickRef.current = null;
@@ -613,7 +685,8 @@ const App: React.FC = () => {
       };
 
       utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
-        if (epoch !== systemSpeechEpochRef.current) return;
+        if (epoch !== systemSpeechEpochRef.current || systemUtteranceRef.current !== utterance) return;
+        systemUtteranceRef.current = null;
         if (suppressOnEndRef.current) {
           suppressOnEndRef.current = false;
           return;
@@ -629,10 +702,15 @@ const App: React.FC = () => {
         }
       };
 
+      if (epoch !== systemSpeechEpochRef.current) return;
       window.speechSynthesis.speak(utterance);
     };
 
-    window.setTimeout(startSpeak, 120);
+    clearSystemSpeechTimer();
+    systemSpeechTimerRef.current = window.setTimeout(() => {
+      systemSpeechTimerRef.current = null;
+      void startSpeak();
+    }, 60);
   };
 
   const restartSystemSpeechAtCurrentPosition = () => {
@@ -977,7 +1055,6 @@ const App: React.FC = () => {
 
   const startBrowserSpeech = (fullText: string, offset: number, _text: string) => {
     pendingBrowserSpeechRef.current = null;
-    systemSpeechEpochRef.current += 1;
     handleWebStop();
     speakSystemSpeechAt(fullText, offset);
   };
@@ -1120,6 +1197,8 @@ const App: React.FC = () => {
 
   const handleWebStop = (resetReadingPosition: boolean = false) => {
     systemSpeechEpochRef.current += 1;
+    systemUtteranceRef.current = null;
+    clearAllSystemSpeechSchedules();
     const hasActiveSystemSpeech = typeof window !== 'undefined'
       && typeof window.speechSynthesis !== 'undefined'
       && (window.speechSynthesis.speaking || window.speechSynthesis.pending);
@@ -1210,7 +1289,7 @@ const App: React.FC = () => {
     const systemSpeechActive = typeof window !== 'undefined'
       && typeof window.speechSynthesis !== 'undefined'
       && (window.speechSynthesis.speaking || window.speechSynthesis.pending);
-    const isPlaying = webAiPlayingRef.current || systemSpeechActive || webIsSpeaking;
+    const isPlaying = webAiPlayingRef.current || systemSpeechActive || webIsSpeakingRef.current;
     if (!isPlaying) return;
 
     if (webAiPlayingRef.current) {
@@ -1225,15 +1304,28 @@ const App: React.FC = () => {
       return;
     }
 
-    if (!webAiPlayingRef.current && (systemSpeechActive || webIsSpeaking) && (webVoiceChanged || rateChanged)) {
-      restartSystemSpeechAtCurrentPosition();
-      if (webVoiceChanged) {
-        showToast('已切換系統語音，從目前位置重新朗讀');
-      } else {
-        showToast('已調整語速，從目前位置重新朗讀');
+    if (!webAiPlayingRef.current && (systemSpeechActive || webIsSpeakingRef.current) && (webVoiceChanged || rateChanged)) {
+      if (playbackRestartTimerRef.current != null) {
+        window.clearTimeout(playbackRestartTimerRef.current);
       }
+      const toastMsg = webVoiceChanged
+        ? '已切換系統語音，從目前位置重新朗讀'
+        : '已調整語速，從目前位置重新朗讀';
+      playbackRestartTimerRef.current = window.setTimeout(() => {
+        playbackRestartTimerRef.current = null;
+        if (webAiPlayingRef.current) return;
+        restartSystemSpeechAtCurrentPosition();
+        showToast(toastMsg);
+      }, 160);
     }
-  }, [voice, webRate, webVoice, webIsSpeaking]);
+
+    return () => {
+      if (playbackRestartTimerRef.current != null) {
+        window.clearTimeout(playbackRestartTimerRef.current);
+        playbackRestartTimerRef.current = null;
+      }
+    };
+  }, [voice, webRate, webVoice]);
 
   const estimateCurrentLineNumber = (textarea: HTMLTextAreaElement, charIndex: number | null): number => {
     if (charIndex !== null) {
