@@ -439,6 +439,7 @@ const App: React.FC = () => {
     ctx: AudioContext;
   } | null>(null);
   const playAiSegmentRef = useRef<(index: number) => Promise<void>>(async () => {});
+  const systemSpeechEpochRef = useRef(0);
 
   useEffect(() => { voiceRef.current = voice; }, [voice]);
   useEffect(() => { webRateRef.current = webRate; }, [webRate]);
@@ -519,25 +520,51 @@ const App: React.FC = () => {
     void playAiSegmentRef.current(0);
   };
 
-  const restartSystemSpeechAtCurrentPosition = () => {
-    if (webAiPlayingRef.current) return;
-    const fullText = webTextRef.current;
-    if (!fullText.trim()) return;
-    const charPos = readingCharIndexRef.current ?? 0;
-    const playOffset = Math.max(0, Math.min(charPos, fullText.length));
+  const resolveSystemVoice = (voiceName: string, voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined => {
+    const pool = voices.length > 0 ? voices : webVoicesRef.current;
+    if (!pool.length) return undefined;
+    const name = (voiceName || '').trim();
+    if (name) {
+      const exact = pool.find((v) => v.name === name);
+      if (exact) return exact;
+    }
+    const fallbackName = pickDefaultChineseVoice(pool);
+    return pool.find((v) => v.name === fallbackName) || pool[0];
+  };
+
+  const speakSystemSpeechAt = (fullText: string, playOffset: number) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const text = fullText.slice(playOffset);
     if (!text.trim()) return;
-    suppressOnEndRef.current = true;
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
+
+    systemSpeechEpochRef.current += 1;
+    const epoch = systemSpeechEpochRef.current;
+
+    if (boundaryTickRef.current) {
+      window.clearInterval(boundaryTickRef.current);
+      boundaryTickRef.current = null;
     }
-    window.setTimeout(() => {
-      suppressOnEndRef.current = false;
+
+    suppressOnEndRef.current = true;
+    window.speechSynthesis.cancel();
+
+    const startSpeak = () => {
+      if (epoch !== systemSpeechEpochRef.current) return;
+
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) webVoicesRef.current = voices;
+
       const utterance = new SpeechSynthesisUtterance(text);
-      const selectedVoice = webVoicesRef.current.find((v) => v.name === webVoiceRef.current);
-      if (selectedVoice) utterance.voice = selectedVoice;
+      const selectedVoice = resolveSystemVoice(webVoiceRef.current, voices);
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+        utterance.lang = selectedVoice.lang || 'zh-TW';
+      }
       utterance.rate = webRateRef.current;
+
       utterance.onstart = () => {
+        if (epoch !== systemSpeechEpochRef.current) return;
+        suppressOnEndRef.current = false;
         setWebIsSpeaking(true);
         setWebIsPaused(false);
         setReadingCharIndex(playOffset);
@@ -545,6 +572,7 @@ const App: React.FC = () => {
         hasBoundaryEventRef.current = false;
         if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
         boundaryTickRef.current = window.setInterval(() => {
+          if (epoch !== systemSpeechEpochRef.current) return;
           if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
           if (hasBoundaryEventRef.current) return;
           const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
@@ -557,25 +585,63 @@ const App: React.FC = () => {
           });
         }, 180);
       };
+
       utterance.onboundary = (event: SpeechSynthesisEvent) => {
+        if (epoch !== systemSpeechEpochRef.current) return;
         if (typeof event.charIndex !== 'number') return;
         hasBoundaryEventRef.current = true;
         const next = Math.min(fullText.length, playOffset + event.charIndex);
         setReadingCharIndex((prev) => (prev === null ? next : Math.max(prev, next)));
       };
+
       utterance.onend = () => {
-        if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
+        if (epoch !== systemSpeechEpochRef.current) return;
+        if (boundaryTickRef.current) {
+          window.clearInterval(boundaryTickRef.current);
+          boundaryTickRef.current = null;
+        }
         setWebIsSpeaking(false);
         setWebIsPaused(false);
-        if (suppressOnEndRef.current) { suppressOnEndRef.current = false; return; }
+        if (suppressOnEndRef.current) {
+          suppressOnEndRef.current = false;
+          return;
+        }
         void (async () => {
           const moved = await tryAutoAdvanceToNextChapter();
           if (!moved) setReadingCharIndex(null);
         })();
       };
-      utterance.onerror = () => { handleWebStop(); };
+
+      utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+        if (epoch !== systemSpeechEpochRef.current) return;
+        if (suppressOnEndRef.current) {
+          suppressOnEndRef.current = false;
+          return;
+        }
+        const errType = String((event as SpeechSynthesisErrorEvent).error || '').toLowerCase();
+        if (errType === 'interrupted' || errType === 'cancelled' || errType === 'canceled') {
+          return;
+        }
+        handleWebStop();
+        if (errType === 'not-allowed' || errType === 'notallowed') {
+          pendingBrowserSpeechRef.current = { fullText, offset: playOffset, text };
+          showToast('手機需再按一次播放，啟用系統語音');
+        }
+      };
+
       window.speechSynthesis.speak(utterance);
-    }, 60);
+    };
+
+    window.setTimeout(startSpeak, 120);
+  };
+
+  const restartSystemSpeechAtCurrentPosition = () => {
+    if (webAiPlayingRef.current) return;
+    const fullText = webTextRef.current;
+    if (!fullText.trim()) return;
+    const charPos = readingCharIndexRef.current ?? 0;
+    const playOffset = Math.max(0, Math.min(charPos, fullText.length));
+    speakSystemSpeechAt(fullText, playOffset);
   };
 
   const stopAiProgressLoop = () => {
@@ -909,70 +975,11 @@ const App: React.FC = () => {
     await handleSearch(value);
   };
 
-  const startBrowserSpeech = (fullText: string, offset: number, text: string) => {
-    suppressOnEndRef.current = false;
-    handleWebStop();
+  const startBrowserSpeech = (fullText: string, offset: number, _text: string) => {
     pendingBrowserSpeechRef.current = null;
-    const utterance = new SpeechSynthesisUtterance(text);
-    const selectedVoice = webVoicesRef.current.find((v) => v.name === webVoiceRef.current);
-    if (selectedVoice) utterance.voice = selectedVoice;
-    utterance.rate = webRateRef.current;
-    utterance.onstart = () => {
-      setWebIsSpeaking(true);
-      setWebIsPaused(false);
-      setReadingCharIndex(offset);
-      ttsStartAtRef.current = Date.now();
-      hasBoundaryEventRef.current = false;
-      if (boundaryTickRef.current) window.clearInterval(boundaryTickRef.current);
-      // 部分瀏覽器/語音不會穩定觸發 onboundary，使用時間估算做備援同步。
-      boundaryTickRef.current = window.setInterval(() => {
-        if (!window.speechSynthesis.speaking || window.speechSynthesis.paused) return;
-        if (hasBoundaryEventRef.current) return; // 一旦有 boundary 事件，改用事件同步，避免雙來源抖動
-        const elapsedSec = (Date.now() - ttsStartAtRef.current) / 1000;
-        const charsPerSec = Math.max(4, 8 * webRateRef.current);
-        const estimatedIndex = Math.floor(elapsedSec * charsPerSec);
-        setReadingCharIndex((prev) => {
-          const next = Math.min(fullText.length, offset + estimatedIndex);
-          if (prev === null) return next;
-          return Math.max(prev, next);
-        });
-      }, 180);
-    };
-    utterance.onboundary = (event: SpeechSynthesisEvent) => {
-      if (typeof event.charIndex !== 'number') return;
-      hasBoundaryEventRef.current = true;
-      const next = Math.min(fullText.length, offset + event.charIndex);
-      setReadingCharIndex((prev) => {
-        if (prev === null) return next;
-        return Math.max(prev, next); // 防止某些語音引擎偶發回退索引造成跳動
-      });
-    };
-    utterance.onend = () => {
-      if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
-      setWebIsSpeaking(false);
-      setWebIsPaused(false);
-      if (suppressOnEndRef.current) {
-        suppressOnEndRef.current = false;
-        return;
-      }
-      void (async () => {
-        const moved = await tryAutoAdvanceToNextChapter();
-        if (!moved) setReadingCharIndex(null);
-      })();
-    };
-    utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
-      if (suppressOnEndRef.current) {
-        suppressOnEndRef.current = false;
-        return;
-      }
-      handleWebStop();
-      const errType = String((event as any)?.error || '').toLowerCase();
-      if (errType === 'not-allowed' || errType === 'notallowed' || errType === 'interrupted') {
-        pendingBrowserSpeechRef.current = { fullText, offset, text };
-        showToast('手機需再按一次播放，啟用系統語音');
-      }
-    };
-    window.speechSynthesis.speak(utterance);
+    systemSpeechEpochRef.current += 1;
+    handleWebStop();
+    speakSystemSpeechAt(fullText, offset);
   };
 
   const handleWebPlayPause = async () => {
@@ -1112,6 +1119,7 @@ const App: React.FC = () => {
   };
 
   const handleWebStop = (resetReadingPosition: boolean = false) => {
+    systemSpeechEpochRef.current += 1;
     const hasActiveSystemSpeech = typeof window !== 'undefined'
       && typeof window.speechSynthesis !== 'undefined'
       && (window.speechSynthesis.speaking || window.speechSynthesis.pending);
@@ -1199,8 +1207,10 @@ const App: React.FC = () => {
     prevWebVoiceRef.current = webVoice;
     if (!voiceChanged && !rateChanged && !webVoiceChanged) return;
 
-    const isPlaying = webAiPlayingRef.current
-      || (typeof window !== 'undefined' && window.speechSynthesis?.speaking);
+    const systemSpeechActive = typeof window !== 'undefined'
+      && typeof window.speechSynthesis !== 'undefined'
+      && (window.speechSynthesis.speaking || window.speechSynthesis.pending);
+    const isPlaying = webAiPlayingRef.current || systemSpeechActive || webIsSpeaking;
     if (!isPlaying) return;
 
     if (webAiPlayingRef.current) {
@@ -1215,11 +1225,15 @@ const App: React.FC = () => {
       return;
     }
 
-    if (voiceChanged || rateChanged || webVoiceChanged) {
+    if (!webAiPlayingRef.current && (systemSpeechActive || webIsSpeaking) && (webVoiceChanged || rateChanged)) {
       restartSystemSpeechAtCurrentPosition();
-      showToast('已切換語音／速度，從目前位置重新朗讀');
+      if (webVoiceChanged) {
+        showToast('已切換系統語音，從目前位置重新朗讀');
+      } else {
+        showToast('已調整語速，從目前位置重新朗讀');
+      }
     }
-  }, [voice, webRate, webVoice]);
+  }, [voice, webRate, webVoice, webIsSpeaking]);
 
   const estimateCurrentLineNumber = (textarea: HTMLTextAreaElement, charIndex: number | null): number => {
     if (charIndex !== null) {
