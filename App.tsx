@@ -2,7 +2,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NovelContent, ReaderState } from './types.ts';
 import { fetchNovelContent, generateSpeech, TtsQuotaExceededError } from './services/geminiService.ts';
-import { getRemainingTtsChars, TTS_MAX_CHARS_PER_SEGMENT, TTS_MONTHLY_CHAR_LIMIT } from './utils/ttsQuota.ts';
+import {
+  getRemainingTtsChars,
+  TTS_MAX_CHARS_PER_SEGMENT,
+  TTS_MONTHLY_CHAR_LIMIT,
+  TTS_QUOTA_UPDATE_EVENT,
+} from './utils/ttsQuota.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
 import { getSafeOpenUrl } from './utils/urlUtils.ts';
 import * as OpenCC from 'opencc-js';
@@ -853,6 +858,24 @@ const App: React.FC = () => {
   useEffect(() => {
     novelRef.current = novel;
   }, [novel]);
+
+  useEffect(() => {
+    const syncTtsQuotaDisplay = () => {
+      setTtsRemainingChars(getRemainingTtsChars());
+    };
+    syncTtsQuotaDisplay();
+    window.addEventListener(TTS_QUOTA_UPDATE_EVENT, syncTtsQuotaDisplay);
+    window.addEventListener('storage', syncTtsQuotaDisplay);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') syncTtsQuotaDisplay();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener(TTS_QUOTA_UPDATE_EVENT, syncTtsQuotaDisplay);
+      window.removeEventListener('storage', syncTtsQuotaDisplay);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     const savedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
