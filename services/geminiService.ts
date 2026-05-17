@@ -30,27 +30,11 @@ const getTtsApiUrl = (): string => {
   const fallbackGithubApiBase = 'https://read-kappa-two.vercel.app';
   if (!baseUrl) {
     if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
-      return `${fallbackGithubApiBase}/api/tts-elevenlabs`;
+      return `${fallbackGithubApiBase}/api/tts-google`;
     }
-    return '/api/tts-elevenlabs';
+    return '/api/tts-google';
   }
-  return `${baseUrl.replace(/\/+$/, '')}/api/tts-elevenlabs`;
-};
-
-const resolveElevenLabsVoiceId = (voiceName?: string): string | undefined => {
-  const defaultVoiceId = import.meta.env.VITE_ELEVENLABS_VOICE_ID?.trim() || 'EXAVITQu4vr4xnSDxMaL';
-  const raw = (voiceName || '').trim();
-  if (!raw) return defaultVoiceId;
-
-  // 如果已經是 ElevenLabs voiceId，直接使用。
-  if (/^[A-Za-z0-9_-]{10,}$/.test(raw)) return raw;
-
-  // 與舊版語音名稱相容（例如 Kore）。
-  const alias = raw.toLowerCase();
-  const aliasMap: Record<string, string> = {
-    kore: defaultVoiceId
-  };
-  return aliasMap[alias] || defaultVoiceId;
+  return `${baseUrl.replace(/\/+$/, '')}/api/tts-google`;
 };
 
 const isLikelyUrlInput = (value: string): boolean => {
@@ -242,26 +226,19 @@ export const generateSpeech = async (
   voiceName: string = 'Kore'
 ): Promise<string> => {
   const apiUrl = getTtsApiUrl();
-  const voiceId = resolveElevenLabsVoiceId(voiceName);
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
-      voiceId
+      voiceName
     })
   });
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`ElevenLabs TTS 失敗: ${errorText}`);
+    throw new Error(`Google Cloud TTS 失敗: ${errorText}`);
   }
   const data = await res.json();
-  if (!data.audioBase64) throw new Error('ElevenLabs 未回傳音訊');
-  if (data.debug) {
-    console.log('TTS debug:', {
-      upstreamContentType: data.debug.upstreamContentType,
-      first8BytesHex: data.debug.first8BytesHex
-    });
-  }
+  if (!data.audioBase64) throw new Error('Google Cloud TTS 未回傳音訊');
   return data.audioBase64 as string;
 };
