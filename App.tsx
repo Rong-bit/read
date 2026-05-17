@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { NovelContent, ReaderState } from './types.ts';
-import { fetchNovelContent, generateSpeech } from './services/geminiService.ts';
+import { fetchNovelContent, generateSpeech, TtsQuotaExceededError } from './services/geminiService.ts';
+import { getRemainingTtsChars, TTS_MAX_CHARS_PER_SEGMENT, TTS_MONTHLY_CHAR_LIMIT } from './utils/ttsQuota.ts';
 import { decode, decodeAudioData } from './utils/audioUtils.ts';
 import { getSafeOpenUrl } from './utils/urlUtils.ts';
 import * as OpenCC from 'opencc-js';
@@ -13,6 +14,11 @@ const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 const STORAGE_KEY_AUTO_NEXT = 'gemini_reader_auto_next';
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5] as const;
+const AI_VOICE_OPTIONS = [
+  { id: 'Aoede', name: '女聲（標準・免費額度）' },
+  { id: 'Kore', name: '男聲 A（標準・免費額度）' },
+  { id: 'Puck', name: '男聲 B（標準・免費額度）' },
+] as const;
 type BookmarkData = {
   id: string;
   title: string;
@@ -149,6 +155,8 @@ type LocalSidebarProps = {
   currentNovelTitle?: string;
   webRate?: number;
   setWebRate?: (v: number) => void;
+  voice?: string;
+  setVoice?: (v: string) => void;
   webVoice?: string;
   setWebVoice?: (v: string) => void;
   webVoices?: SpeechSynthesisVoice[];
@@ -170,6 +178,10 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   currentNovelTitle,
   webRate = 1,
   setWebRate,
+  voice = 'Aoede',
+  setVoice,
+  useAiReading = true,
+  setUseAiReading,
   autoNextChapter = true,
   setAutoNextChapter,
   onAutoNextToggle
@@ -196,6 +208,37 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
       >
         自動下一章：{autoNextChapter ? '開' : '關'}
       </button>
+      <button
+        className={`w-full text-left p-3.5 rounded-lg text-base font-bold border ${useAiReading ? 'bg-indigo-600 text-white border-indigo-300/40 hover:bg-indigo-500' : 'bg-slate-700 text-slate-100 border-white/25 hover:bg-slate-600'}`}
+        onClick={() => {
+          const next = !useAiReading;
+          setUseAiReading?.(next);
+          if (next) setTtsRemainingChars(getRemainingTtsChars());
+        }}
+      >
+        朗讀模式：{useAiReading ? 'AI（標準語音）' : '系統語音（免費）'}
+      </button>
+      {useAiReading ? (
+        <p className="text-[11px] text-slate-400 leading-relaxed px-1">
+          使用 Google 標準語音，每月約 {TTS_MONTHLY_CHAR_LIMIT.toLocaleString()} 字上限；超出後自動改系統語音。建議搭配 Google Cloud 帳單預算提醒。
+        </p>
+      ) : null}
+      {useAiReading ? (
+        <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
+          <div className="text-xs text-slate-300 mb-2">AI 語音</div>
+          <div className="grid grid-cols-1 gap-2">
+            {AI_VOICE_OPTIONS.map((v) => (
+              <button
+                key={v.id}
+                className={`py-2 px-3 rounded-md text-sm font-semibold border text-left ${voice === v.id ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-slate-700 text-slate-100 border-white/20 hover:bg-slate-600'}`}
+                onClick={() => setVoice?.(v.id)}
+              >
+                {v.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="rounded-lg border border-white/15 p-3 bg-slate-800/40">
         <div className="text-xs text-slate-300 mb-2">播放速度</div>
         <div className="grid grid-cols-4 gap-2">
@@ -216,7 +259,7 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
 
 const App: React.FC = () => {
   const [novel, setNovel] = useState<NovelContent | null>(null);
-  const [voice, setVoice] = useState('Kore');
+  const [voice, setVoice] = useState('Aoede');
   const [volume, setVolume] = useState(0.8);
   const [playbackRate, setPlaybackRate] = useState(0.8);
   const [duration, setDuration] = useState(0);
@@ -242,7 +285,8 @@ const App: React.FC = () => {
   const [webVoice, setWebVoice] = useState('');
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<'keyword' | 'url'>('keyword');
-  const [useAiReading, setUseAiReading] = useState(true);
+  const [useAiReading, setUseAiReading] = useState(false);
+  const [ttsRemainingChars, setTtsRemainingChars] = useState(() => getRemainingTtsChars());
   const [autoNextChapter, setAutoNextChapter] = useState(true);
   const [webAiLoading, setWebAiLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -407,7 +451,7 @@ const App: React.FC = () => {
     const savedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
     if (savedSettings) {
       const s = JSON.parse(savedSettings);
-      setVoice(s.voice || 'Kore');
+      setVoice(s.voice || 'Aoede');
       setVolume(s.volume ?? 0.8);
       setPlaybackRate(s.playbackRate ?? 0.8);
       setFontSize(s.fontSize ?? 22);
@@ -418,7 +462,7 @@ const App: React.FC = () => {
     const savedUseAi = localStorage.getItem(STORAGE_KEY_USE_AI_READING);
     if (savedUseAi === 'true') setUseAiReading(true);
     else if (savedUseAi === 'false') setUseAiReading(false);
-    else setUseAiReading(true);
+    else setUseAiReading(false);
     const savedAutoNext = localStorage.getItem(STORAGE_KEY_AUTO_NEXT);
     if (savedAutoNext === 'true') setAutoNextChapter(true);
     else if (savedAutoNext === 'false') setAutoNextChapter(false);
@@ -451,6 +495,13 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_USE_AI_READING, useAiReading ? 'true' : 'false');
   }, [useAiReading]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY_SETTINGS,
+      JSON.stringify({ voice, volume, playbackRate, fontSize, theme })
+    );
+  }, [voice, volume, playbackRate, fontSize, theme]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_AUTO_NEXT, autoNextChapter ? 'true' : 'false');
@@ -713,7 +764,7 @@ const App: React.FC = () => {
     if (useAiReading) {
       suppressOnEndRef.current = false;
       handleWebStop();
-      const segments = splitTextForTTSWithRanges(text, 1200);
+      const segments = splitTextForTTSWithRanges(text, TTS_MAX_CHARS_PER_SEGMENT);
       setWebAiLoading(true);
       const ctx = initAudioContext();
       if (ctx.state === 'suspended') await ctx.resume();
@@ -730,6 +781,7 @@ const App: React.FC = () => {
           const currentSegment = segments[index];
           setReadingCharIndex(offset + currentSegment.start);
           const base64Audio = await generateSpeech(currentSegment.text, voice);
+          setTtsRemainingChars(getRemainingTtsChars());
           try {
             aiPlaybackModeRef.current = 'htmlaudio';
             const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
@@ -782,14 +834,16 @@ const App: React.FC = () => {
             startAiProgressLoop();
           }
           setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
-        } catch (e: any) {
-          // AI 失敗時靜默降級到系統朗讀，避免錯誤訊息長駐畫面。
+        } catch (e: unknown) {
           setWebError((prev) => (prev?.startsWith('AI 朗讀') ? null : prev));
           webAiPlayingRef.current = false;
           stopAiProgressLoop();
           sourceRef.current = null;
           setWebAiLoading(false);
-          showToast('AI 朗讀不可用，已自動切換為系統語音');
+          const quotaMsg = e instanceof TtsQuotaExceededError
+            ? e.message
+            : 'AI 朗讀不可用，已自動切換為系統語音（免費）';
+          showToast(quotaMsg);
           console.warn('AI 朗讀失敗，已自動切換系統朗讀', e);
           startBrowserSpeech(fullText, offset, text);
         }
@@ -985,6 +1039,8 @@ const App: React.FC = () => {
         currentNovelTitle={novel?.title ?? webTitle}
         webRate={webRate}
         setWebRate={setWebRate}
+        voice={voice}
+        setVoice={setVoice}
       autoNextChapter={autoNextChapter}
       setAutoNextChapter={setAutoNextChapter}
         onAutoNextToggle={(enabled) => showToast(enabled ? '已開啟自動下一章' : '已關閉自動下一章')}
@@ -1057,7 +1113,7 @@ const App: React.FC = () => {
       <div className="fixed bottom-0 left-0 right-0 p-4 z-[100] bg-gradient-to-t from-black/80 via-black/40 to-transparent backdrop-blur-sm pointer-events-none">
         <div className="max-w-sm mx-auto mb-2 pointer-events-none text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/45 px-3 py-1 text-xs text-white/90">
-            <span>{useAiReading ? 'AI朗讀' : '系統語音'}</span>
+            <span>{useAiReading ? `AI朗讀·剩${ttsRemainingChars.toLocaleString()}/${TTS_MONTHLY_CHAR_LIMIT.toLocaleString()}字` : '系統語音（免費）'}</span>
             <span>·</span>
             <span>{webRate}x</span>
             <span>·</span>
@@ -1105,6 +1161,20 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center mb-8"><h2 className="text-2xl font-bold">閱讀偏好</h2><button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-white"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
             <div className="space-y-8">
               <div><label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">字體大小 ({fontSize}px)</label><input type="range" min="16" max="40" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" /></div>
+              <div>
+                <label className="block text-sm font-bold text-slate-400 mb-3 uppercase tracking-widest">AI 語音</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {AI_VOICE_OPTIONS.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setVoice(v.id)}
+                      className={`py-3 px-4 rounded-xl border text-left font-semibold transition-all ${voice === v.id ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-400'}`}
+                    >
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div><label className="block text-sm font-bold text-slate-400 mb-4 uppercase tracking-widest">閱讀主題</label><div className="grid grid-cols-3 gap-3">{['dark', 'sepia', 'slate'].map(t => (<button key={t} onClick={() => {setTheme(t as any); setIsSettingsOpen(false);}} className={`py-4 rounded-2xl border transition-all font-bold ${theme === t ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/5 bg-white/5 text-slate-500'}`}>{t === 'dark' ? '深邃黑' : t === 'sepia' ? '羊皮紙' : '岩板灰'}</button>))}</div></div>
             </div>
           </div>
