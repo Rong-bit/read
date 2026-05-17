@@ -1,5 +1,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NovelContent } from "../types.ts";
+import {
+  canUseTtsChars,
+  recordTtsUsage,
+  TtsQuotaExceededError,
+} from "../utils/ttsQuota.ts";
 
 const resolveApiKey = (): string => {
   const key = import.meta.env.VITE_API_KEY?.trim();
@@ -221,24 +226,36 @@ const extractTitleFromUrl = (url: string): string => {
   }
 };
 
+export { TtsQuotaExceededError };
+
 export const generateSpeech = async (
   text: string,
-  voiceName: string = 'Kore'
+  voiceName: string = 'Aoede'
 ): Promise<string> => {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error('缺少朗讀文字');
+  if (!canUseTtsChars(trimmed.length)) {
+    throw new TtsQuotaExceededError();
+  }
+
   const apiUrl = getTtsApiUrl();
   const res = await fetch(apiUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      text,
+      text: trimmed,
       voiceName
     })
   });
   if (!res.ok) {
     const errorText = await res.text();
+    if (res.status === 429) {
+      throw new TtsQuotaExceededError();
+    }
     throw new Error(`Google Cloud TTS 失敗: ${errorText}`);
   }
   const data = await res.json();
   if (!data.audioBase64) throw new Error('Google Cloud TTS 未回傳音訊');
+  recordTtsUsage(trimmed.length);
   return data.audioBase64 as string;
 };
