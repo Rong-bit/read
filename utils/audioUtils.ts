@@ -15,7 +15,7 @@ export async function decodeAudioData(
   _sampleRate: number,
   _numChannels: number,
 ): Promise<AudioBuffer> {
-  // ElevenLabs 路徑固定使用容器音訊（mp3/wav），僅走瀏覽器原生解碼，
+  // TTS 路徑固定使用容器音訊（mp3/wav），僅走瀏覽器原生解碼，
   // 避免誤把壓縮音訊當 PCM 解析而產生整段雜音。
   try {
     const copy = data.slice().buffer; // 避免 byteOffset 造成解碼錯位
