@@ -25,6 +25,47 @@ const parseGoogleError = (rawText) => {
   }
 };
 
+const envInt = (key, fallback) => {
+  const n = Number(process.env[key]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+};
+
+/** 僅允許 Standard 語音（免費額度最高、單價最低） */
+const MAX_CHARS_PER_REQUEST = envInt('GOOGLE_TTS_MAX_CHARS_PER_REQUEST', 400);
+const MAX_REQUESTS_PER_MINUTE = envInt('GOOGLE_TTS_MAX_REQUESTS_PER_MINUTE', 30);
+const rateLimitMap = new Map();
+
+const isTtsDisabled = () => {
+  const v = process.env.GOOGLE_TTS_DISABLED?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+};
+
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket?.remoteAddress || 'unknown';
+};
+
+const checkRateLimit = (ip) => {
+  const now = Date.now();
+  const windowMs = 60_000;
+  const entry = rateLimitMap.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + windowMs;
+  }
+  entry.count += 1;
+  rateLimitMap.set(ip, entry);
+  if (rateLimitMap.size > 500) {
+    for (const [key, val] of rateLimitMap) {
+      if (now > val.resetAt) rateLimitMap.delete(key);
+    }
+  }
+  return entry.count <= MAX_REQUESTS_PER_MINUTE;
+};
+
 const getServiceAccountCredentials = () => {
   const raw = process.env.GOOGLE_CLOUD_TTS_CREDENTIALS?.trim();
   if (!raw) return null;
@@ -68,31 +109,60 @@ const getAccessTokenFromServiceAccount = async (credentials) => {
   return tokenData.access_token;
 };
 
+/** 強制對應到 Standard 語音，拒絕 Wavenet / Neural2（較貴） */
 const resolveVoice = (voiceName) => {
   const languageCode = process.env.GOOGLE_CLOUD_TTS_LANGUAGE?.trim() || 'cmn-TW';
-  const defaultVoice = process.env.GOOGLE_CLOUD_TTS_VOICE?.trim() || `${languageCode}-Wavenet-B`;
+  const defaultVoice = `${languageCode}-Standard-A`;
   const raw = (voiceName || '').trim();
-  if (!raw) return { languageCode, name: defaultVoice };
 
-  if (raw.includes('-Wavenet-') || raw.includes('-Neural2-') || raw.includes('-Standard-')) {
+  const toStandard = (name) => {
+    if (!name.includes('-Standard-')) {
+      return name
+        .replace(/-Wavenet-[A-Z]/gi, (m) => `-Standard-${m.slice(-1)}`)
+        .replace(/-Neural2-[A-Z]/gi, (m) => `-Standard-${m.slice(-1)}`);
+    }
+    return name;
+  };
+
+  if (raw.includes('-Standard-')) {
     const lang = raw.split('-').slice(0, 2).join('-');
     return { languageCode: lang || languageCode, name: raw };
   }
 
   const alias = raw.toLowerCase();
   const aliasMap = {
-    kore: `${languageCode}-Wavenet-B`,
-    puck: `${languageCode}-Wavenet-C`,
-    charon: `${languageCode}-Neural2-C`,
-    fenrir: `${languageCode}-Neural2-B`,
-    aoede: `${languageCode}-Wavenet-A`,
+    aoede: `${languageCode}-Standard-A`,
+    kore: `${languageCode}-Standard-B`,
+    puck: `${languageCode}-Standard-C`,
+    charon: `${languageCode}-Standard-B`,
+    fenrir: `${languageCode}-Standard-C`,
   };
-  const resolvedName = aliasMap[alias] || defaultVoice;
+
+  let resolvedName = aliasMap[alias] || defaultVoice;
+  if (raw.includes('-Wavenet-') || raw.includes('-Neural2-')) {
+    resolvedName = toStandard(raw);
+  }
+  if (!resolvedName.includes('-Standard-')) {
+    resolvedName = defaultVoice;
+  }
+
   const lang = resolvedName.split('-').slice(0, 2).join('-');
   return { languageCode: lang || languageCode, name: resolvedName };
 };
 
 export const synthesizeGoogleSpeech = async (text, voiceName) => {
+  if (isTtsDisabled()) {
+    throw new Error('伺服器已關閉 AI 朗讀（GOOGLE_TTS_DISABLED）');
+  }
+
+  const trimmed = (text || '').trim();
+  if (!trimmed) {
+    throw new Error('缺少 text');
+  }
+  if (trimmed.length > MAX_CHARS_PER_REQUEST) {
+    throw new Error(`單次朗讀不得超過 ${MAX_CHARS_PER_REQUEST} 字（請縮短段落）`);
+  }
+
   const apiKey = process.env.GOOGLE_CLOUD_API_KEY?.trim();
   const credentials = getServiceAccountCredentials();
   if (!apiKey && !credentials) {
@@ -115,7 +185,7 @@ export const synthesizeGoogleSpeech = async (text, voiceName) => {
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     body: JSON.stringify({
-      input: { text },
+      input: { text: trimmed },
       voice: { languageCode, name },
       audioConfig: {
         audioEncoding: 'MP3',
@@ -148,6 +218,20 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (isTtsDisabled()) {
+    res.status(503).json({ error: 'AI 朗讀已關閉', code: 'TTS_DISABLED' });
+    return;
+  }
+
+  const ip = getClientIp(req);
+  if (!checkRateLimit(ip)) {
+    res.status(429).json({
+      error: `請求過於頻繁，每分鐘最多 ${MAX_REQUESTS_PER_MINUTE} 次`,
+      code: 'RATE_LIMIT',
+    });
+    return;
+  }
+
   let body = req.body || {};
   if (typeof body === 'string') {
     try {
@@ -163,13 +247,26 @@ export default async function handler(req, res) {
     res.status(400).json({ error: '缺少 text' });
     return;
   }
+  if (text.length > MAX_CHARS_PER_REQUEST) {
+    res.status(400).json({
+      error: `單次不得超過 ${MAX_CHARS_PER_REQUEST} 字`,
+      code: 'TEXT_TOO_LONG',
+      maxChars: MAX_CHARS_PER_REQUEST,
+    });
+    return;
+  }
 
   try {
     const audioBase64 = await synthesizeGoogleSpeech(text, voiceName);
+    const { name } = resolveVoice(voiceName);
     res.status(200).json({
       audioBase64,
       sampleRate: 24000,
       numChannels: 1,
+      tier: 'standard',
+      voiceUsed: name,
+      charCount: text.length,
+      maxCharsPerRequest: MAX_CHARS_PER_REQUEST,
     });
   } catch (error) {
     res.status(500).json({ error: error?.message || 'Google Cloud TTS 請求失敗' });
