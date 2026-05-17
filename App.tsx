@@ -550,6 +550,39 @@ const App: React.FC = () => {
     }
   };
 
+  const stopAiPlaybackOnly = () => {
+    webAiPlayingRef.current = false;
+    aiPlaybackStateRef.current = null;
+    stopAiProgressLoop();
+    stopCurrentAiSegmentOnly();
+    setWebAiLoading(false);
+    setWebIsPaused(false);
+  };
+
+  const stopSystemSpeechOnly = () => {
+    systemSpeechEpochRef.current += 1;
+    systemUtteranceRef.current = null;
+    clearAllSystemSpeechSchedules();
+    suppressOnEndRef.current = true;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    if (boundaryTickRef.current) {
+      window.clearInterval(boundaryTickRef.current);
+      boundaryTickRef.current = null;
+    }
+    setWebIsPaused(false);
+  };
+
+  const switchToSystemSpeechAtCurrentPosition = () => {
+    stopAiPlaybackOnly();
+    const fullText = webTextRef.current;
+    if (!fullText.trim()) return;
+    const charPos = readingCharIndexRef.current ?? 0;
+    const playOffset = Math.max(0, Math.min(charPos, fullText.length));
+    speakSystemSpeechAt(fullText, playOffset);
+  };
+
   const applyLivePlaybackRate = () => {
     const rate = webRateRef.current;
     if (htmlAudioRef.current) {
@@ -1059,6 +1092,121 @@ const App: React.FC = () => {
     speakSystemSpeechAt(fullText, offset);
   };
 
+  const beginAiPlaybackAtOffset = async (fullText: string, offset: number) => {
+    const text = fullText.slice(offset);
+    if (!text.trim()) return;
+    suppressOnEndRef.current = false;
+    const segments = splitTextForTTSWithRanges(text, TTS_MAX_CHARS_PER_SEGMENT);
+    setWebAiLoading(true);
+    const ctx = initAudioContext();
+    if (ctx.state === 'suspended') await ctx.resume();
+    webAiPlayingRef.current = true;
+    aiPlaybackStateRef.current = { fullText, offset, segments, segmentIndex: 0, ctx };
+    const playNextSegment = async (index: number) => {
+      if (!webAiPlayingRef.current) return;
+      const playback = aiPlaybackStateRef.current;
+      if (!playback) return;
+      playback.segmentIndex = index;
+      const activeSegments = playback.segments;
+      const baseOffset = playback.offset;
+      if (index >= activeSegments.length) {
+        const moved = await tryAutoAdvanceToNextChapter();
+        if (!moved) handleWebStop();
+        return;
+      }
+      stopCurrentAiSegmentOnly();
+      try {
+        const currentSegment = activeSegments[index];
+        setReadingCharIndex(baseOffset + currentSegment.start);
+        const base64Audio = await generateSpeech(currentSegment.text, voiceRef.current);
+        if (!webAiPlayingRef.current) return;
+        setTtsRemainingChars(getRemainingTtsChars());
+        const rate = webRateRef.current;
+        try {
+          aiPlaybackModeRef.current = 'htmlaudio';
+          const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
+          const audio = new Audio(objectUrl);
+          audio.playbackRate = rate;
+          htmlAudioRef.current = audio;
+          audio.onended = () => {
+            htmlAudioRef.current = null;
+            if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
+          };
+          audio.onerror = () => {
+            htmlAudioRef.current = null;
+            throw new Error('HTMLAudio 播放失敗');
+          };
+          await audio.play();
+        } catch {
+          if (!webAiPlayingRef.current) return;
+          const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+          if (!webAiPlayingRef.current) return;
+          aiPlaybackModeRef.current = 'webaudio';
+          const source = ctx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.playbackRate.value = rate;
+          const gainNode = ctx.createGain();
+          source.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          const now = ctx.currentTime;
+          const fadeInSec = Math.min(0.02, Math.max(0.006, audioBuffer.duration * 0.08));
+          const fadeOutSec = Math.min(0.03, Math.max(0.01, audioBuffer.duration * 0.12));
+          const playGain = 0.9;
+          gainNode.gain.cancelScheduledValues(now);
+          gainNode.gain.setValueAtTime(0, now);
+          gainNode.gain.linearRampToValueAtTime(playGain, now + fadeInSec);
+          const fadeOutStart = Math.max(now + fadeInSec, now + audioBuffer.duration - fadeOutSec);
+          gainNode.gain.setValueAtTime(playGain, fadeOutStart);
+          gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
+          source.onended = () => {
+            stopAiProgressLoop();
+            if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
+          };
+          source.start(0);
+          sourceRef.current = source;
+          aiSegmentProgressRef.current = {
+            ctx,
+            startCtxTime: ctx.currentTime,
+            bufferDuration: audioBuffer.duration,
+            duration: audioBuffer.duration / Math.max(0.1, rate),
+            charStart: baseOffset + currentSegment.start,
+            charEnd: baseOffset + currentSegment.end,
+          };
+          startAiProgressLoop();
+        }
+        setWebIsSpeaking(true);
+        setWebIsPaused(false);
+        setWebAiLoading(false);
+      } catch (e: unknown) {
+        if (!webAiPlayingRef.current) return;
+        setWebError((prev) => (prev?.startsWith('AI 朗讀') ? null : prev));
+        webAiPlayingRef.current = false;
+        aiPlaybackStateRef.current = null;
+        stopAiProgressLoop();
+        sourceRef.current = null;
+        setWebAiLoading(false);
+        const quotaMsg = e instanceof TtsQuotaExceededError
+          ? e.message
+          : 'AI 朗讀不可用，已自動切換為系統語音（免費）';
+        showToast(quotaMsg);
+        console.warn('AI 朗讀失敗，已自動切換系統朗讀', e);
+        startBrowserSpeech(fullText, offset, text);
+      }
+    };
+    playAiSegmentRef.current = playNextSegment;
+    void playNextSegment(0);
+  };
+
+  const switchToAiSpeechAtCurrentPosition = () => {
+    stopSystemSpeechOnly();
+    const fullText = webTextRef.current;
+    if (!fullText.trim()) return;
+    const charPos = readingCharIndexRef.current ?? 0;
+    const playOffset = Math.max(0, Math.min(charPos, fullText.length));
+    void beginAiPlaybackAtOffset(fullText, playOffset);
+  };
+
   const handleWebPlayPause = async () => {
     if (pendingBrowserSpeechRef.current && !webAiPlayingRef.current && !window.speechSynthesis.speaking) {
       primeSystemSpeech();
@@ -1094,102 +1242,8 @@ const App: React.FC = () => {
     // 僅在「新開始播放」前做一次系統語音預熱，避免干擾暫停/續播切換。
     primeSystemSpeech();
     if (useAiReading) {
-      suppressOnEndRef.current = false;
       handleWebStop();
-      const segments = splitTextForTTSWithRanges(text, TTS_MAX_CHARS_PER_SEGMENT);
-      setWebAiLoading(true);
-      const ctx = initAudioContext();
-      if (ctx.state === 'suspended') await ctx.resume();
-      webAiPlayingRef.current = true;
-      aiPlaybackStateRef.current = { fullText, offset, segments, segmentIndex: 0, ctx };
-      const playNextSegment = async (index: number) => {
-        if (!webAiPlayingRef.current) { handleWebStop(); return; }
-        const playback = aiPlaybackStateRef.current;
-        if (!playback) return;
-        playback.segmentIndex = index;
-        const activeSegments = playback.segments;
-        const baseOffset = playback.offset;
-        if (index >= activeSegments.length) {
-          const moved = await tryAutoAdvanceToNextChapter();
-          if (!moved) handleWebStop();
-          return;
-        }
-        stopCurrentAiSegmentOnly();
-        try {
-          const currentSegment = activeSegments[index];
-          setReadingCharIndex(baseOffset + currentSegment.start);
-          const base64Audio = await generateSpeech(currentSegment.text, voiceRef.current);
-          setTtsRemainingChars(getRemainingTtsChars());
-          const rate = webRateRef.current;
-          try {
-            aiPlaybackModeRef.current = 'htmlaudio';
-            const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
-            const audio = new Audio(objectUrl);
-            audio.playbackRate = rate;
-            htmlAudioRef.current = audio;
-            audio.onended = () => {
-              htmlAudioRef.current = null;
-              if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
-            };
-            audio.onerror = () => {
-              htmlAudioRef.current = null;
-              throw new Error('HTMLAudio 播放失敗');
-            };
-            await audio.play();
-          } catch {
-            const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-            aiPlaybackModeRef.current = 'webaudio';
-            const source = ctx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.playbackRate.value = rate;
-            const gainNode = ctx.createGain();
-            source.connect(gainNode);
-            gainNode.connect(ctx.destination);
-
-            const now = ctx.currentTime;
-            const fadeInSec = Math.min(0.02, Math.max(0.006, audioBuffer.duration * 0.08));
-            const fadeOutSec = Math.min(0.03, Math.max(0.01, audioBuffer.duration * 0.12));
-            const playGain = 0.9;
-            gainNode.gain.cancelScheduledValues(now);
-            gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(playGain, now + fadeInSec);
-            const fadeOutStart = Math.max(now + fadeInSec, now + audioBuffer.duration - fadeOutSec);
-            gainNode.gain.setValueAtTime(playGain, fadeOutStart);
-            gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
-            source.onended = () => {
-              stopAiProgressLoop();
-              if (webAiPlayingRef.current) void playAiSegmentRef.current(index + 1);
-            };
-            source.start(0);
-            sourceRef.current = source;
-            aiSegmentProgressRef.current = {
-              ctx,
-              startCtxTime: ctx.currentTime,
-              bufferDuration: audioBuffer.duration,
-              duration: audioBuffer.duration / Math.max(0.1, rate),
-              charStart: baseOffset + currentSegment.start,
-              charEnd: baseOffset + currentSegment.end,
-            };
-            startAiProgressLoop();
-          }
-          setWebIsSpeaking(true); setWebIsPaused(false); setWebAiLoading(false);
-        } catch (e: unknown) {
-          setWebError((prev) => (prev?.startsWith('AI 朗讀') ? null : prev));
-          webAiPlayingRef.current = false;
-          aiPlaybackStateRef.current = null;
-          stopAiProgressLoop();
-          sourceRef.current = null;
-          setWebAiLoading(false);
-          const quotaMsg = e instanceof TtsQuotaExceededError
-            ? e.message
-            : 'AI 朗讀不可用，已自動切換為系統語音（免費）';
-          showToast(quotaMsg);
-          console.warn('AI 朗讀失敗，已自動切換系統朗讀', e);
-          startBrowserSpeech(fullText, offset, text);
-        }
-      };
-      playAiSegmentRef.current = playNextSegment;
-      void playNextSegment(0);
+      await beginAiPlaybackAtOffset(fullText, offset);
     } else {
       startBrowserSpeech(fullText, offset, text);
     }
@@ -1267,6 +1321,10 @@ const App: React.FC = () => {
   };
 
   const playbackSettingsMountedRef = useRef(false);
+  const readingModeMountedRef = useRef(false);
+  const prevUseAiReadingRef = useRef(useAiReading);
+  const webAiLoadingRef = useRef(webAiLoading);
+  useEffect(() => { webAiLoadingRef.current = webAiLoading; }, [webAiLoading]);
   const prevVoiceRef = useRef(voice);
   const prevWebRateRef = useRef(webRate);
   const prevWebVoiceRef = useRef(webVoice);
@@ -1326,6 +1384,36 @@ const App: React.FC = () => {
       }
     };
   }, [voice, webRate, webVoice]);
+
+  useEffect(() => {
+    if (!readingModeMountedRef.current) {
+      readingModeMountedRef.current = true;
+      prevUseAiReadingRef.current = useAiReading;
+      return;
+    }
+    const prevAi = prevUseAiReadingRef.current;
+    prevUseAiReadingRef.current = useAiReading;
+    if (prevAi === useAiReading) return;
+
+    const systemSpeechActive = typeof window !== 'undefined'
+      && typeof window.speechSynthesis !== 'undefined'
+      && (window.speechSynthesis.speaking || window.speechSynthesis.pending);
+    const isPlaying = webAiPlayingRef.current
+      || webAiLoadingRef.current
+      || systemSpeechActive
+      || webIsSpeakingRef.current;
+    if (!isPlaying) return;
+
+    if (prevAi && !useAiReading) {
+      switchToSystemSpeechAtCurrentPosition();
+      showToast('已切換為系統語音，從目前位置重新朗讀');
+      return;
+    }
+    if (!prevAi && useAiReading) {
+      switchToAiSpeechAtCurrentPosition();
+      showToast('已切換為 AI 語音，從目前位置重新朗讀');
+    }
+  }, [useAiReading]);
 
   const estimateCurrentLineNumber = (textarea: HTMLTextAreaElement, charIndex: number | null): number => {
     if (charIndex !== null) {
