@@ -729,7 +729,7 @@ const App: React.FC = () => {
         try {
           const currentSegment = segments[index];
           setReadingCharIndex(offset + currentSegment.start);
-          const base64Audio = await generateSpeech(currentSegment.text, 'Kore');
+          const base64Audio = await generateSpeech(currentSegment.text, voice);
           try {
             aiPlaybackModeRef.current = 'htmlaudio';
             const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
