@@ -368,7 +368,7 @@ const App: React.FC = () => {
   const [novel, setNovel] = useState<NovelContent | null>(null);
   const [voice, setVoice] = useState('Aoede');
   const [volume, setVolume] = useState(0.8);
-  const [playbackRate, setPlaybackRate] = useState(0.8);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -383,7 +383,7 @@ const App: React.FC = () => {
   const [webUrl, setWebUrl] = useState('');
   const [webTitle, setWebTitle] = useState('');
   const [webText, setWebText] = useState('');
-  const [webRate, setWebRate] = useState(0.8);
+  const [webRate, setWebRate] = useState(1);
   const [webError, setWebError] = useState<string | null>(null);
   const [webLoading, setWebLoading] = useState(false);
   const [webIsSpeaking, setWebIsSpeaking] = useState(false);
@@ -941,7 +941,7 @@ const App: React.FC = () => {
       const s = JSON.parse(savedSettings);
       setVoice(s.voice || 'Aoede');
       setVolume(s.volume ?? 0.8);
-      setPlaybackRate(s.playbackRate ?? 0.8);
+      setPlaybackRate(s.playbackRate ?? 1);
       setFontSize(s.fontSize ?? 22);
       setTheme(s.theme || 'dark');
     }
