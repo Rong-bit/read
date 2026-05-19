@@ -18,6 +18,7 @@ const STORAGE_KEY_WEB_RATE = 'web_reader_rate';
 const STORAGE_KEY_WEB_VOICE = 'web_reader_voice';
 const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 const STORAGE_KEY_AUTO_NEXT = 'gemini_reader_auto_next';
+const STORAGE_KEY_DEFAULT_RATE_MIGRATION = 'gemini_reader_default_rate_v2';
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5] as const;
 const AI_TAIWAN_VOICE_OPTIONS = [
   { id: 'Aoede', name: '女聲（標準）' },
@@ -946,7 +947,19 @@ const App: React.FC = () => {
       setTheme(s.theme || 'dark');
     }
     const savedWebRate = localStorage.getItem(STORAGE_KEY_WEB_RATE);
-    if (savedWebRate) setWebRate(normalizePlaybackRate(parseFloat(savedWebRate)));
+    const rateMigrated = localStorage.getItem(STORAGE_KEY_DEFAULT_RATE_MIGRATION) === 'true';
+    if (savedWebRate) {
+      const parsedRate = normalizePlaybackRate(parseFloat(savedWebRate));
+      // 一次性遷移：舊版本預設值 0.75 升級為 1；使用者若主動選了其它速度則保留。
+      if (!rateMigrated && parsedRate === 0.75) {
+        setWebRate(1);
+      } else {
+        setWebRate(parsedRate);
+      }
+    }
+    if (!rateMigrated) {
+      localStorage.setItem(STORAGE_KEY_DEFAULT_RATE_MIGRATION, 'true');
+    }
     const savedUseAi = localStorage.getItem(STORAGE_KEY_USE_AI_READING);
     if (savedUseAi === 'true') setUseAiReading(true);
     else if (savedUseAi === 'false') setUseAiReading(false);
