@@ -799,9 +799,9 @@ const App: React.FC = () => {
       const span = meta.charEnd - meta.charStart;
       let idx: number;
       if (span <= 1) idx = meta.charStart;
-      // 使用 Math.round 取「最接近當前發音的字」而非「已念完的整字數」，
-      // 讓平均誤差從「約 1 字」降為「約 0.5 字」，長段尤其明顯。
-      else idx = meta.charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span)));
+      // 使用 Math.round 取「最接近當前發音的字」而非「已念完的整字數」，並加上一字前瞻量，
+      // 補償使用者實際聽到聲音時反白通常滯後約一字的感知差。
+      else idx = meta.charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span) + 1));
       setReadingCharIndex(idx);
       aiProgressRafRef.current = requestAnimationFrame(tick);
     };
@@ -835,9 +835,11 @@ const App: React.FC = () => {
         const elapsedSec = (Date.now() - startedAt) / 1000;
         progress = Math.min(0.95, Math.max(0, (elapsedSec * estimatedCharsPerSec) / span));
       }
+      // 使用 Math.round 對齊「當前發音的字」並加上一字前瞻量，
+      // 補償使用者實際聽到聲音時反白通常滯後約一字的感知差。
       const idx = span <= 1
         ? charStart
-        : charStart + Math.min(span - 1, Math.floor(progress * span));
+        : charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span) + 1));
       setReadingCharIndex((prev) => (prev === null ? idx : Math.max(prev, idx)));
       aiProgressRafRef.current = requestAnimationFrame(tick);
     };
