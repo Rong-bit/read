@@ -403,6 +403,11 @@ const App: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const htmlAudioRef = useRef<HTMLAudioElement | null>(null);
+  // 手機瀏覽器需要由「使用者手勢」啟用一次後才可程式化播放。
+  // 這裡用單一可重用的 audio 元素，避免每個 segment new Audio() 後被自動播放政策阻擋。
+  const unlockedHtmlAudioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaUnlockedRef = useRef(false);
+  const currentBlobUrlRef = useRef<string | null>(null);
   const aiPlaybackModeRef = useRef<'webaudio' | 'htmlaudio'>('webaudio');
   const toastTimerRef = useRef<number | null>(null);
   const pendingRestoreRef = useRef<BookmarkData | null>(null);
@@ -553,10 +558,13 @@ const App: React.FC = () => {
       audio.onended = null;
       audio.onerror = null;
       try { audio.pause(); } catch { /* ignore */ }
-      audio.removeAttribute('src');
+      // 注意：保留 unlockedHtmlAudioRef.current 不要 destroy，
+      // 否則手機需要重新 user gesture 才能再次播放。這裡只清 src 並釋放 blob URL。
+      try { audio.removeAttribute('src'); } catch { /* ignore */ }
       try { audio.load(); } catch { /* ignore */ }
       htmlAudioRef.current = null;
     }
+    releaseCurrentBlobUrl();
   };
 
   const stopAiPlaybackOnly = () => {
@@ -996,6 +1004,80 @@ const App: React.FC = () => {
     return audioContextRef.current;
   };
 
+  // 必須「同步」在 user gesture（如 onClick）中呼叫，
+  // 才能讓手機瀏覽器把 AudioContext 與 <audio> 元素都標記為「已啟用」。
+  // 啟用後即使 fetch 完音訊已脫離 user gesture，也仍可程式化播放後續 segment。
+  const unlockMediaOnGesture = () => {
+    if (mediaUnlockedRef.current) {
+      // 已啟用：仍保險地再 resume 一次（避免被系統暫停過）。
+      try {
+        const ctx = audioContextRef.current;
+        if (ctx && ctx.state === 'suspended') void ctx.resume();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    mediaUnlockedRef.current = true;
+
+    // 1) 啟用 AudioContext：resume + 播放 1 sample 的無聲 buffer。
+    try {
+      const ctx = initAudioContext();
+      if (ctx.state === 'suspended') void ctx.resume();
+      const silentBuffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const silentSource = ctx.createBufferSource();
+      silentSource.buffer = silentBuffer;
+      silentSource.connect(ctx.destination);
+      silentSource.start(0);
+    } catch {
+      /* ignore */
+    }
+
+    // 2) 啟用單一可重用的 <audio> 元素：play() 一段極短無聲 mp3。
+    // 此元素一旦在 user gesture 中 play() 成功過，
+    // 後續即使在非 user gesture 內也可程式化呼叫 play()/load()/src=。
+    try {
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audio.crossOrigin = 'anonymous';
+      // 極短無聲 mp3 data URL（約幾百 bytes，僅用於 unlock，不會實際發聲）
+      audio.src = 'data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgID/////////////////////////////////////////////8AAAA5MQU1FMy4xMDAB7QAAAAAAAAAAFCAJAlsTAAACAAACcU+IxA8AAAAAAAAAAAAAAAAAAP/7kMQAAA5MTEoAACE4DJyzMABE7gAAH/8AAAAA';
+      audio.muted = false;
+      audio.volume = 0;
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise.then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.volume = 1;
+        }).catch(() => {
+          // 即便靜音音訊播放失敗也保留元素；後續 play() 仍會嘗試。
+          audio.volume = 1;
+        });
+      } else {
+        audio.volume = 1;
+      }
+      unlockedHtmlAudioRef.current = audio;
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // 將 base64 mp3 轉為 Blob URL（取代 data:audio/mpeg;base64,...，避免手機 Safari 對大 data URL 的限制）。
+  const buildBlobUrlFromBase64Mp3 = (base64Audio: string): string => {
+    const bytes = decode(base64Audio);
+    // 使用 slice().buffer 取得獨立 ArrayBuffer，避免 TypeScript 對 SharedArrayBuffer 推論的型別錯誤。
+    const blob = new Blob([bytes.slice().buffer], { type: 'audio/mpeg' });
+    return URL.createObjectURL(blob);
+  };
+
+  const releaseCurrentBlobUrl = () => {
+    if (currentBlobUrlRef.current) {
+      try { URL.revokeObjectURL(currentBlobUrlRef.current); } catch { /* ignore */ }
+      currentBlobUrlRef.current = null;
+    }
+  };
+
   const handleSearch = async (input: string) => {
     try {
       handleWebStop(true);
@@ -1163,9 +1245,23 @@ const App: React.FC = () => {
         let usedWebAudioFallback = false;
         try {
           aiPlaybackModeRef.current = 'htmlaudio';
-          const objectUrl = `data:audio/mpeg;base64,${base64Audio}`;
-          const audio = new Audio(objectUrl);
+          // 重用已被 user gesture 啟用過的單一 audio 元素，避免每段 new Audio() 在手機被自動播放政策阻擋。
+          const audio = unlockedHtmlAudioRef.current || new Audio();
+          if (!unlockedHtmlAudioRef.current) {
+            unlockedHtmlAudioRef.current = audio;
+          }
+          // 釋放上一段的 blob URL，再建立本段的 blob URL（取代大型 data URL）。
+          releaseCurrentBlobUrl();
+          const blobUrl = buildBlobUrlFromBase64Mp3(base64Audio);
+          currentBlobUrlRef.current = blobUrl;
+          // 先停止舊內容並切換 src。
+          try { audio.pause(); } catch { /* ignore */ }
+          audio.onended = null;
+          audio.onerror = null;
+          audio.src = blobUrl;
+          try { audio.load(); } catch { /* ignore */ }
           audio.playbackRate = rate;
+          audio.volume = 1;
           const playToken = aiEpoch;
           htmlAudioRef.current = audio;
           if (!isActiveAi()) return;
@@ -1292,6 +1388,9 @@ const App: React.FC = () => {
   };
 
   const handleWebPlayPause = async () => {
+    // 必須在所有 await 之前「同步」啟用 AudioContext 與 <audio> 元素，
+    // 否則手機瀏覽器會視為非 user gesture 觸發後續播放而靜音。
+    unlockMediaOnGesture();
     if (pendingBrowserSpeechRef.current && !webAiPlayingRef.current && !window.speechSynthesis.speaking) {
       primeSystemSpeech();
       const pending = pendingBrowserSpeechRef.current;
@@ -1352,10 +1451,15 @@ const App: React.FC = () => {
       sourceRef.current = null;
     }
     if (htmlAudioRef.current) {
-      try { htmlAudioRef.current.pause(); } catch {}
-      htmlAudioRef.current.src = '';
+      const audio = htmlAudioRef.current;
+      audio.onended = null;
+      audio.onerror = null;
+      try { audio.pause(); } catch {}
+      try { audio.removeAttribute('src'); } catch {}
+      try { audio.load(); } catch {}
       htmlAudioRef.current = null;
     }
+    releaseCurrentBlobUrl();
     aiPlaybackModeRef.current = 'webaudio';
     if (typeof window.speechSynthesis !== 'undefined') window.speechSynthesis.cancel();
     if (boundaryTickRef.current) { window.clearInterval(boundaryTickRef.current); boundaryTickRef.current = null; }
