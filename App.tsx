@@ -852,7 +852,8 @@ const App: React.FC = () => {
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
     const targetTopInTextarea = Math.max(0, getScrollContentOffsetTopForCharIndex(textarea, clamped));
     setReadingLineHeight(lineHeight);
-    // textarea 已不再內部捲動，高亮列直接定位在 textarea 內容中的絕對位置（隨外層 main 捲動而移動）。
+    // 反白條本身依然以「textarea 內絕對位置」定位，並隨外層 main 一起捲動；
+    // 我們透過下方主動捲動 main，讓反白條在「視口中的位置」始終貼齊錨點，視覺上即不動。
     setReadingLineViewportY(targetTopInTextarea);
 
     const viewportHeight = main.clientHeight || 600;
@@ -861,30 +862,17 @@ const App: React.FC = () => {
     const textareaRect = textarea.getBoundingClientRect();
     const textareaTopInMainContent = textareaRect.top - mainRect.top + mainScrollTop;
     const absoluteTopInMain = textareaTopInMainContent + targetTopInTextarea;
-    const lineYInViewport = absoluteTopInMain - mainScrollTop;
 
-    const anchorRatio = 0.34; // 朗讀行靠上方
+    const anchorRatio = 0.34; // 朗讀行貼齊視口上方約 1/3 處
     const pinnedY = viewportHeight * anchorRatio;
     const maxScrollTop = Math.max(0, main.scrollHeight - viewportHeight);
     const desiredTop = Math.max(0, Math.min(absoluteTopInMain - pinnedY, maxScrollTop));
-    const canPinCenter = desiredTop > 1 && desiredTop < maxScrollTop - 1;
-    const safeTop = viewportHeight * 0.26;
-    const safeBottom = viewportHeight * 0.5;
-    const now = Date.now();
-    const minStepPx = Math.max(lineHeight * 0.7, 20);
-    const throttleMs = Math.max(350, Math.min(900, lineHeight * 12));
 
-    if (canPinCenter) {
-      if (Math.abs(desiredTop - mainScrollTop) < 1) return;
-      main.scrollTo({ top: desiredTop, behavior: 'auto' });
-      return;
-    }
-
-    if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
-    if (now - lastAutoScrollAtRef.current < throttleMs) return;
-    if (Math.abs(desiredTop - mainScrollTop) < minStepPx) return;
-
-    lastAutoScrollAtRef.current = now;
+    // 每次都精確對齊：main.scrollTop = absoluteTopInMain - pinnedY，
+    // 使反白條在視口中保持固定 Y 座標。只在差距 < 0.5px 時略過，避免無意義的微小重排。
+    // 接近章節首/尾時 desiredTop 會被 clamp，此時反白會自然落到字元的實際位置（物理限制）。
+    if (Math.abs(desiredTop - mainScrollTop) < 0.5) return;
+    lastAutoScrollAtRef.current = Date.now();
     main.scrollTo({ top: desiredTop, behavior: 'auto' });
   };
 
