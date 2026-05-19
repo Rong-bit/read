@@ -1218,15 +1218,18 @@ const App: React.FC = () => {
           gainNode.connect(ctx.destination);
 
           const now = ctx.currentTime;
-          const fadeInSec = Math.min(0.02, Math.max(0.006, audioBuffer.duration * 0.08));
-          const fadeOutSec = Math.min(0.03, Math.max(0.01, audioBuffer.duration * 0.12));
+          // 實際播放時長 = 原始長度 / 播放速率（rate<1 會變長，rate>1 會變短）
+          // 淡入淡出必須對齊「實際播放時間軸」，否則慢速時 gain 會提早歸零，導致後段變靜音。
+          const actualPlayDuration = audioBuffer.duration / Math.max(0.1, rate);
+          const fadeInSec = Math.min(0.02, Math.max(0.006, actualPlayDuration * 0.04));
+          const fadeOutSec = Math.min(0.03, Math.max(0.01, actualPlayDuration * 0.04));
           const playGain = 0.9;
           gainNode.gain.cancelScheduledValues(now);
           gainNode.gain.setValueAtTime(0, now);
           gainNode.gain.linearRampToValueAtTime(playGain, now + fadeInSec);
-          const fadeOutStart = Math.max(now + fadeInSec, now + audioBuffer.duration - fadeOutSec);
+          const fadeOutStart = Math.max(now + fadeInSec, now + actualPlayDuration - fadeOutSec);
           gainNode.gain.setValueAtTime(playGain, fadeOutStart);
-          gainNode.gain.linearRampToValueAtTime(0, now + audioBuffer.duration);
+          gainNode.gain.linearRampToValueAtTime(0, now + actualPlayDuration);
           source.onended = () => {
             stopAiProgressLoop();
             if (isActiveAi()) void playAiSegmentRef.current(index + 1);
