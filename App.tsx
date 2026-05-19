@@ -799,7 +799,9 @@ const App: React.FC = () => {
       const span = meta.charEnd - meta.charStart;
       let idx: number;
       if (span <= 1) idx = meta.charStart;
-      else idx = meta.charStart + Math.min(span - 1, Math.floor(progress * span));
+      // 使用 Math.round 取「最接近當前發音的字」而非「已念完的整字數」，
+      // 讓平均誤差從「約 1 字」降為「約 0.5 字」，長段尤其明顯。
+      else idx = meta.charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span)));
       setReadingCharIndex(idx);
       aiProgressRafRef.current = requestAnimationFrame(tick);
     };
