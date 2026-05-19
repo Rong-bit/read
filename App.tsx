@@ -490,8 +490,11 @@ const App: React.FC = () => {
     }
   };
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
-  const [readingLineViewportY, setReadingLineViewportY] = useState<number | null>(null);
-  const [readingLineHeight, setReadingLineHeight] = useState<number>(36);
+  const [hasReadingLine, setHasReadingLine] = useState<boolean>(false);
+  // 反白條的位置與高度完全由 ref 直接操作 DOM，避免 React state 異步更新與 main.scrollTo 不同步造成的視覺抖動。
+  const readingLineRef = useRef<HTMLDivElement | null>(null);
+  const lineTopRef = useRef<number>(0);
+  const lineHeightRef = useRef<number>(36);
 
   useEffect(() => { readingCharIndexRef.current = readingCharIndex; }, [readingCharIndex]);
   useEffect(() => { webVoicesRef.current = webVoices; }, [webVoices]);
@@ -839,11 +842,21 @@ const App: React.FC = () => {
     aiProgressRafRef.current = requestAnimationFrame(tick);
   };
 
+  const applyReadingLineStyle = (top: number, height: number) => {
+    lineTopRef.current = top;
+    lineHeightRef.current = height;
+    const el = readingLineRef.current;
+    if (el) {
+      el.style.top = `${top}px`;
+      el.style.height = `${height}px`;
+    }
+  };
+
   const syncReadingPosition = (charIndex: number | null) => {
     const textarea = webTextareaRef.current;
     const main = mainScrollRef.current;
     if (!textarea || !main || charIndex === null) {
-      setReadingLineViewportY(null);
+      if (hasReadingLine) setHasReadingLine(false);
       return;
     }
     const clamped = Math.max(0, Math.min(charIndex, textarea.value.length));
@@ -851,10 +864,6 @@ const App: React.FC = () => {
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
     const targetTopInTextarea = Math.max(0, getScrollContentOffsetTopForCharIndex(textarea, clamped));
-    setReadingLineHeight(lineHeight);
-    // 反白條本身依然以「textarea 內絕對位置」定位，並隨外層 main 一起捲動；
-    // 我們透過下方主動捲動 main，讓反白條在「視口中的位置」始終貼齊錨點，視覺上即不動。
-    setReadingLineViewportY(targetTopInTextarea);
 
     const viewportHeight = main.clientHeight || 600;
     const mainScrollTop = main.scrollTop;
@@ -868,17 +877,22 @@ const App: React.FC = () => {
     const maxScrollTop = Math.max(0, main.scrollHeight - viewportHeight);
     const desiredTop = Math.max(0, Math.min(absoluteTopInMain - pinnedY, maxScrollTop));
 
-    // 每次都精確對齊：main.scrollTop = absoluteTopInMain - pinnedY，
-    // 使反白條在視口中保持固定 Y 座標。只在差距 < 0.5px 時略過，避免無意義的微小重排。
-    // 接近章節首/尾時 desiredTop 會被 clamp，此時反白會自然落到字元的實際位置（物理限制）。
-    if (Math.abs(desiredTop - mainScrollTop) < 0.5) return;
-    lastAutoScrollAtRef.current = Date.now();
-    main.scrollTo({ top: desiredTop, behavior: 'auto' });
+    // 1) 先同步把 main 捲動到目標位置（瞬時 imperative DOM 操作）。
+    if (Math.abs(desiredTop - mainScrollTop) >= 0.5) {
+      lastAutoScrollAtRef.current = Date.now();
+      main.scrollTo({ top: desiredTop, behavior: 'auto' });
+    }
+
+    // 2) 同一同步函式內，立即用 ref 直接寫入反白條 DOM 的 top/height，
+    //    與 main.scrollTo 在同一幀生效，避免 React state 異步更新造成的視覺抖動。
+    applyReadingLineStyle(Math.max(0, targetTopInTextarea - 2), lineHeight + 4);
+
+    if (!hasReadingLine) setHasReadingLine(true);
   };
 
   useEffect(() => {
     if (readingCharIndex === null) {
-      setReadingLineViewportY(null);
+      if (hasReadingLine) setHasReadingLine(false);
       return;
     }
     syncReadingPosition(readingCharIndex);
@@ -1839,10 +1853,17 @@ const App: React.FC = () => {
             )}
 
             <div className="relative w-full">
-              {readingLineViewportY !== null && (
+              {hasReadingLine && (
                 <div
-                  className="pointer-events-none absolute left-0 right-0 z-10 transition-[top] duration-150"
-                  style={{ top: Math.max(0, readingLineViewportY - 2), height: readingLineHeight + 4 }}
+                  ref={(el) => {
+                    readingLineRef.current = el;
+                    // 元素 mount 後立即同步最新的 top/height，避免首次顯示出現一幀空位。
+                    if (el) {
+                      el.style.top = `${lineTopRef.current}px`;
+                      el.style.height = `${lineHeightRef.current}px`;
+                    }
+                  }}
+                  className="pointer-events-none absolute left-0 right-0 z-10"
                 >
                   <div className={`w-full h-full rounded-sm ${theme === 'sepia' ? 'bg-[#5b4636]/10' : 'bg-indigo-400/12'}`}></div>
                 </div>
