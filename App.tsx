@@ -20,6 +20,8 @@ const STORAGE_KEY_USE_AI_READING = 'gemini_reader_use_ai';
 const STORAGE_KEY_AUTO_NEXT = 'gemini_reader_auto_next';
 const STORAGE_KEY_DEFAULT_RATE_MIGRATION = 'gemini_reader_default_rate_v2';
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5] as const;
+// 反白相對於實際聲音的「前瞻字數」。聲音聽起來快幾字，就把這個常數調大幾字；反白超前則調小。
+const READING_LOOKAHEAD_CHARS = 2;
 const AI_TAIWAN_VOICE_OPTIONS = [
   { id: 'Aoede', name: '女聲（標準）' },
   { id: 'Kore', name: '男聲 A（標準）' },
@@ -491,10 +493,13 @@ const App: React.FC = () => {
   };
   const [readingCharIndex, setReadingCharIndex] = useState<number | null>(null);
   const [hasReadingLine, setHasReadingLine] = useState<boolean>(false);
-  // 反白條的位置與高度完全由 ref 直接操作 DOM，避免 React state 異步更新與 main.scrollTo 不同步造成的視覺抖動。
+  // 反白條使用 position: fixed 直接固定在視口，與 main 滾動完全解耦；
+  // 位置完全由 ref 直接操作 DOM，避免 React state 異步更新造成的視覺抖動。
   const readingLineRef = useRef<HTMLDivElement | null>(null);
   const lineTopRef = useRef<number>(0);
   const lineHeightRef = useRef<number>(36);
+  const lineLeftRef = useRef<number>(0);
+  const lineWidthRef = useRef<number>(0);
 
   useEffect(() => { readingCharIndexRef.current = readingCharIndex; }, [readingCharIndex]);
   useEffect(() => { webVoicesRef.current = webVoices; }, [webVoices]);
@@ -799,9 +804,9 @@ const App: React.FC = () => {
       const span = meta.charEnd - meta.charStart;
       let idx: number;
       if (span <= 1) idx = meta.charStart;
-      // 使用 Math.round 取「最接近當前發音的字」而非「已念完的整字數」，並加上一字前瞻量，
-      // 補償使用者實際聽到聲音時反白通常滯後約一字的感知差。
-      else idx = meta.charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span) + 1));
+      // 使用 Math.round 取「最接近當前發音的字」而非「已念完的整字數」，並加上前瞻量（READING_LOOKAHEAD_CHARS），
+      // 補償使用者實際聽到聲音時反白通常滯後的感知差。可微調此常數來調整觀感。
+      else idx = meta.charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span) + READING_LOOKAHEAD_CHARS));
       setReadingCharIndex(idx);
       aiProgressRafRef.current = requestAnimationFrame(tick);
     };
@@ -835,24 +840,28 @@ const App: React.FC = () => {
         const elapsedSec = (Date.now() - startedAt) / 1000;
         progress = Math.min(0.95, Math.max(0, (elapsedSec * estimatedCharsPerSec) / span));
       }
-      // 使用 Math.round 對齊「當前發音的字」並加上一字前瞻量，
-      // 補償使用者實際聽到聲音時反白通常滯後約一字的感知差。
+      // 使用 Math.round 對齊「當前發音的字」並加上前瞻量（READING_LOOKAHEAD_CHARS），
+      // 補償使用者實際聽到聲音時反白通常滯後的感知差。可微調此常數來調整觀感。
       const idx = span <= 1
         ? charStart
-        : charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span) + 1));
+        : charStart + Math.min(span - 1, Math.max(0, Math.round(progress * span) + READING_LOOKAHEAD_CHARS));
       setReadingCharIndex((prev) => (prev === null ? idx : Math.max(prev, idx)));
       aiProgressRafRef.current = requestAnimationFrame(tick);
     };
     aiProgressRafRef.current = requestAnimationFrame(tick);
   };
 
-  const applyReadingLineStyle = (top: number, height: number) => {
+  const applyReadingLineStyle = (top: number, height: number, left: number, width: number) => {
     lineTopRef.current = top;
     lineHeightRef.current = height;
+    lineLeftRef.current = left;
+    lineWidthRef.current = width;
     const el = readingLineRef.current;
     if (el) {
       el.style.top = `${top}px`;
       el.style.height = `${height}px`;
+      el.style.left = `${left}px`;
+      el.style.width = `${width}px`;
     }
   };
 
@@ -887,9 +896,17 @@ const App: React.FC = () => {
       main.scrollTo({ top: desiredTop, behavior: 'auto' });
     }
 
-    // 2) 同一同步函式內，立即用 ref 直接寫入反白條 DOM 的 top/height，
-    //    與 main.scrollTo 在同一幀生效，避免 React state 異步更新造成的視覺抖動。
-    applyReadingLineStyle(Math.max(0, targetTopInTextarea - 2), lineHeight + 4);
+    // 2) 反白條使用 position: fixed 直接定位在「視口座標系」，與 main 滾動完全解耦。
+    //    字元在視口的 Y = mainRect.top + (absoluteTopInMain - desiredTop)
+    //    中段：desiredTop = absoluteTopInMain - pinnedY → Y = mainRect.top + pinnedY（恆定）
+    //    章節首/尾：desiredTop 被 clamp → Y 自然落到字元的實際視口位置
+    const lineFixedTop = mainRect.top + (absoluteTopInMain - desiredTop);
+    applyReadingLineStyle(
+      Math.max(0, lineFixedTop - 2),
+      lineHeight + 4,
+      textareaRect.left,
+      textareaRect.width,
+    );
 
     if (!hasReadingLine) setHasReadingLine(true);
   };
@@ -1797,6 +1814,21 @@ const App: React.FC = () => {
 
   return (
     <div className={`h-screen overflow-hidden flex flex-col transition-colors duration-500 ${getThemeClass()}`}>
+      {hasReadingLine && (
+        <div
+          ref={(el) => {
+            readingLineRef.current = el;
+            // mount 後立刻同步最新的 top/height/left/width，避免首幀位置為 0。
+            if (el) {
+              el.style.top = `${lineTopRef.current}px`;
+              el.style.height = `${lineHeightRef.current}px`;
+              el.style.left = `${lineLeftRef.current}px`;
+              el.style.width = `${lineWidthRef.current}px`;
+            }
+          }}
+          className={`pointer-events-none fixed z-[90] rounded-sm ${theme === 'sepia' ? 'bg-[#5b4636]/10' : 'bg-indigo-400/12'}`}
+        />
+      )}
       <Header onToggleMenu={() => setIsMenuOpen(true)} title={webTitle || novel?.title} />
       
       <Sidebar 
@@ -1857,21 +1889,6 @@ const App: React.FC = () => {
             )}
 
             <div className="relative w-full">
-              {hasReadingLine && (
-                <div
-                  ref={(el) => {
-                    readingLineRef.current = el;
-                    // 元素 mount 後立即同步最新的 top/height，避免首次顯示出現一幀空位。
-                    if (el) {
-                      el.style.top = `${lineTopRef.current}px`;
-                      el.style.height = `${lineHeightRef.current}px`;
-                    }
-                  }}
-                  className="pointer-events-none absolute left-0 right-0 z-10"
-                >
-                  <div className={`w-full h-full rounded-sm ${theme === 'sepia' ? 'bg-[#5b4636]/10' : 'bg-indigo-400/12'}`}></div>
-                </div>
-              )}
               <textarea
                 ref={webTextareaRef}
                 value={webText}
