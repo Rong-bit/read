@@ -803,6 +803,41 @@ const App: React.FC = () => {
     aiProgressRafRef.current = requestAnimationFrame(tick);
   };
 
+  // HTMLAudio 模式（手機主要路徑）的進度更新：以 audio.currentTime / audio.duration 推進 readingCharIndex，
+  // 讓反白可隨聲音逐字前進，避免長段時反白卡在段首。
+  const startHtmlAudioProgressLoop = (
+    audio: HTMLAudioElement,
+    charStart: number,
+    charEnd: number,
+    epoch: number,
+  ) => {
+    if (aiProgressRafRef.current !== null) cancelAnimationFrame(aiProgressRafRef.current);
+    const span = Math.max(0, charEnd - charStart);
+    // 預估每秒字數，僅作為 audio.duration 尚未就緒時的後備估算。
+    const estimatedCharsPerSec = Math.max(4, 7.5 * Math.max(0.1, webRateRef.current));
+    const startedAt = Date.now();
+    const tick = () => {
+      if (!webAiPlayingRef.current || epoch !== aiPlaybackEpochRef.current) return;
+      if (htmlAudioRef.current !== audio) return;
+      const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+      const cur = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      let progress = 0;
+      if (dur > 0) {
+        progress = Math.min(1, Math.max(0, cur / dur));
+      } else if (span > 0) {
+        // audio.duration 尚未就緒時，以時間 × 推估速度近似推進，避免反白完全靜止。
+        const elapsedSec = (Date.now() - startedAt) / 1000;
+        progress = Math.min(0.95, Math.max(0, (elapsedSec * estimatedCharsPerSec) / span));
+      }
+      const idx = span <= 1
+        ? charStart
+        : charStart + Math.min(span - 1, Math.floor(progress * span));
+      setReadingCharIndex((prev) => (prev === null ? idx : Math.max(prev, idx)));
+      aiProgressRafRef.current = requestAnimationFrame(tick);
+    };
+    aiProgressRafRef.current = requestAnimationFrame(tick);
+  };
+
   const syncReadingPosition = (charIndex: number | null) => {
     const textarea = webTextareaRef.current;
     const main = mainScrollRef.current;
@@ -1281,12 +1316,22 @@ const App: React.FC = () => {
           htmlAudioRef.current = audio;
           if (!isActiveAi()) return;
 
+          const segCharStart = baseOffset + currentSegment.start;
+          const segCharEnd = baseOffset + currentSegment.end;
+
           await new Promise<void>((resolve, reject) => {
             audio.onended = () => {
+              stopAiProgressLoop();
+              // 段結束時，把反白推到段尾，避免最後幾個字未被高亮過。
+              setReadingCharIndex((prev) => {
+                const target = Math.max(segCharStart, segCharEnd - 1);
+                return prev === null ? target : Math.max(prev, target);
+              });
               htmlAudioRef.current = null;
               resolve();
             };
             audio.onerror = () => {
+              stopAiProgressLoop();
               htmlAudioRef.current = null;
               if (!isActiveAi() || playToken !== aiPlaybackEpochRef.current) {
                 resolve();
@@ -1294,7 +1339,12 @@ const App: React.FC = () => {
               }
               reject(new Error('HTMLAudio 播放失敗'));
             };
-            void audio.play().catch((err) => {
+            void audio.play().then(() => {
+              if (!isActiveAi() || playToken !== aiPlaybackEpochRef.current) return;
+              if (htmlAudioRef.current !== audio) return;
+              startHtmlAudioProgressLoop(audio, segCharStart, segCharEnd, playToken);
+            }).catch((err) => {
+              stopAiProgressLoop();
               htmlAudioRef.current = null;
               if (!isActiveAi() || playToken !== aiPlaybackEpochRef.current) {
                 resolve();
