@@ -202,7 +202,6 @@ type LocalSidebarProps = {
   onOpenSettings: () => void;
   onOpenBrowse: () => void;
   onOpenLibrary: () => void;
-  onNewSearch: () => void;
   onConvertToTraditional?: () => void;
   onOpenUrlModal?: () => void;
   currentNovelTitle?: string;
@@ -225,7 +224,6 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
   onClose,
   onOpenSettings,
   onOpenBrowse,
-  onNewSearch,
   onConvertToTraditional,
   onOpenUrlModal,
   currentNovelTitle,
@@ -255,7 +253,6 @@ const Sidebar: React.FC<LocalSidebarProps> = ({
     </div>
     <div className="p-4 space-y-3">
       {currentNovelTitle ? <div className="text-sm text-slate-100/95 truncate font-medium">{currentNovelTitle}</div> : null}
-      <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onNewSearch(); onClose(); }}>新搜尋</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenUrlModal?.(); onClose(); }}>網址抓取</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onConvertToTraditional?.(); onClose(); }}>簡轉繁</button>
       <button className="w-full text-left p-3.5 bg-slate-600 text-white rounded-lg text-base font-bold border border-white/25 hover:bg-slate-500" onClick={() => { onOpenBrowse(); onClose(); }}>瀏覽書源</button>
@@ -1613,13 +1610,6 @@ const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenBrowse={() => setIsBrowseOpen(true)}
         onOpenLibrary={() => setIsBrowseOpen(true)}
-        onNewSearch={() => {
-          handleWebStop(true);
-          setShowSearch(true);
-          setSearchMode('keyword');
-          setWebUrl('');
-          setIsUrlModalOpen(true);
-        }}
         onConvertToTraditional={handleConvertToTraditional}
         onOpenUrlModal={() => { setSearchMode('url'); setWebUrl(''); setIsUrlModalOpen(true); setIsMenuOpen(false); }}
         currentNovelTitle={novel?.title ?? webTitle}
