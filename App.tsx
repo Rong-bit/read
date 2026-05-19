@@ -413,6 +413,7 @@ const App: React.FC = () => {
   const pendingRestoreRef = useRef<BookmarkData | null>(null);
   const webAiPlayingRef = useRef(false);
   const webTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mainScrollRef = useRef<HTMLElement | null>(null);
   const boundaryTickRef = useRef<number | null>(null);
   const ttsStartAtRef = useRef<number>(0);
   const hasBoundaryEventRef = useRef<boolean>(false);
@@ -804,7 +805,8 @@ const App: React.FC = () => {
 
   const syncReadingPosition = (charIndex: number | null) => {
     const textarea = webTextareaRef.current;
-    if (!textarea || charIndex === null) {
+    const main = mainScrollRef.current;
+    if (!textarea || !main || charIndex === null) {
       setReadingLineViewportY(null);
       return;
     }
@@ -812,38 +814,42 @@ const App: React.FC = () => {
     const computed = window.getComputedStyle(textarea);
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
-    const targetTop = Math.max(0, getScrollContentOffsetTopForCharIndex(textarea, clamped));
-    const viewportHeight = textarea.clientHeight || 600;
-    const currentTop = textarea.scrollTop;
-    const lineYInViewport = targetTop - currentTop;
+    const targetTopInTextarea = Math.max(0, getScrollContentOffsetTopForCharIndex(textarea, clamped));
     setReadingLineHeight(lineHeight);
-    const anchorRatio = 0.34; // 再上移一點，讓朗讀行更靠近上方
+    // textarea 已不再內部捲動，高亮列直接定位在 textarea 內容中的絕對位置（隨外層 main 捲動而移動）。
+    setReadingLineViewportY(targetTopInTextarea);
+
+    const viewportHeight = main.clientHeight || 600;
+    const mainScrollTop = main.scrollTop;
+    const mainRect = main.getBoundingClientRect();
+    const textareaRect = textarea.getBoundingClientRect();
+    const textareaTopInMainContent = textareaRect.top - mainRect.top + mainScrollTop;
+    const absoluteTopInMain = textareaTopInMainContent + targetTopInTextarea;
+    const lineYInViewport = absoluteTopInMain - mainScrollTop;
+
+    const anchorRatio = 0.34; // 朗讀行靠上方
     const pinnedY = viewportHeight * anchorRatio;
-    const maxScrollTop = Math.max(0, textarea.scrollHeight - viewportHeight);
-    const desiredTop = Math.max(0, Math.min(targetTop - pinnedY, maxScrollTop));
+    const maxScrollTop = Math.max(0, main.scrollHeight - viewportHeight);
+    const desiredTop = Math.max(0, Math.min(absoluteTopInMain - pinnedY, maxScrollTop));
     const canPinCenter = desiredTop > 1 && desiredTop < maxScrollTop - 1;
-    // 可置中的區間固定反白位置，讓文字流動；首尾無法置中時退回真實位置。
-    setReadingLineViewportY(canPinCenter ? pinnedY : Math.max(0, lineYInViewport));
     const safeTop = viewportHeight * 0.26;
     const safeBottom = viewportHeight * 0.5;
     const now = Date.now();
-    const minStepPx = Math.max(lineHeight * 0.7, 20); // 太小就忽略，避免抖動但保留校正能力
-    const throttleMs = Math.max(350, Math.min(900, lineHeight * 12)); // 字越大，捲動節流越長
+    const minStepPx = Math.max(lineHeight * 0.7, 20);
+    const throttleMs = Math.max(350, Math.min(900, lineHeight * 12));
 
     if (canPinCenter) {
-      if (Math.abs(desiredTop - currentTop) < 1) return;
-      textarea.scrollTo({ top: desiredTop, behavior: 'auto' });
+      if (Math.abs(desiredTop - mainScrollTop) < 1) return;
+      main.scrollTo({ top: desiredTop, behavior: 'auto' });
       return;
     }
 
-    // 朗讀行仍在中央安全區就不捲動，避免視覺抖動。
     if (lineYInViewport >= safeTop && lineYInViewport <= safeBottom) return;
     if (now - lastAutoScrollAtRef.current < throttleMs) return;
-    const nextTop = desiredTop;
-    if (Math.abs(nextTop - currentTop) < minStepPx) return;
+    if (Math.abs(desiredTop - mainScrollTop) < minStepPx) return;
 
     lastAutoScrollAtRef.current = now;
-    textarea.scrollTo({ top: nextTop, behavior: 'auto' });
+    main.scrollTo({ top: desiredTop, behavior: 'auto' });
   };
 
   useEffect(() => {
@@ -855,14 +861,22 @@ const App: React.FC = () => {
   }, [readingCharIndex, fontSize]);
 
   useEffect(() => {
-    const textarea = webTextareaRef.current;
-    if (!textarea) return;
+    const main = mainScrollRef.current;
+    if (!main) return;
     const handleScroll = () => {
       if (readingCharIndex !== null) syncReadingPosition(readingCharIndex);
     };
-    textarea.addEventListener('scroll', handleScroll);
-    return () => textarea.removeEventListener('scroll', handleScroll);
+    main.addEventListener('scroll', handleScroll);
+    return () => main.removeEventListener('scroll', handleScroll);
   }, [readingCharIndex, fontSize]);
+
+  // 讓 textarea 隨內容自動撐高，配合外層 main 統一捲動，避免雙重滾輪。
+  useEffect(() => {
+    const textarea = webTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [webText, fontSize]);
 
   useEffect(() => {
     novelRef.current = novel;
@@ -979,8 +993,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const pending = pendingRestoreRef.current;
     const textarea = webTextareaRef.current;
-    if (!pending || !textarea || !webText.trim()) return;
-    textarea.scrollTo({ top: Math.max(0, pending.scrollTop), behavior: 'auto' });
+    const main = mainScrollRef.current;
+    if (!pending || !textarea || !main || !webText.trim()) return;
+    main.scrollTo({ top: Math.max(0, pending.scrollTop), behavior: 'auto' });
     const restoredCharIndex = typeof pending.readingCharIndex === 'number'
       ? pending.readingCharIndex
       : getCharIndexFromLineNumber(webText, pending.lineNumber || 1);
@@ -1467,8 +1482,8 @@ const App: React.FC = () => {
     if (resetReadingPosition) {
       forceStartFromTopRef.current = true;
       setReadingCharIndex(null);
-      const textarea = webTextareaRef.current;
-      if (textarea) textarea.scrollTo({ top: 0, behavior: 'auto' });
+      const main = mainScrollRef.current;
+      if (main) main.scrollTo({ top: 0, behavior: 'auto' });
     }
   };
 
@@ -1612,7 +1627,13 @@ const App: React.FC = () => {
     const computed = window.getComputedStyle(textarea);
     const parsedLineHeight = parseFloat(computed.lineHeight || '');
     const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 2.2;
-    return Math.max(1, Math.floor(textarea.scrollTop / Math.max(1, lineHeight)) + 1);
+    const main = mainScrollRef.current;
+    const mainScrollTop = main?.scrollTop ?? 0;
+    const mainRect = main?.getBoundingClientRect();
+    const textareaRect = textarea.getBoundingClientRect();
+    const textareaTopInMain = mainRect ? (textareaRect.top - mainRect.top + mainScrollTop) : 0;
+    const offsetInTextarea = Math.max(0, mainScrollTop - textareaTopInMain);
+    return Math.max(1, Math.floor(offsetInTextarea / Math.max(1, lineHeight)) + 1);
   };
 
   const getCharIndexFromLineNumber = (text: string, lineNumber: number): number => {
@@ -1628,6 +1649,7 @@ const App: React.FC = () => {
 
   const handleSaveBookmark = () => {
     const textarea = webTextareaRef.current;
+    const main = mainScrollRef.current;
     if (!webText.trim() || !textarea) {
       showToast('目前沒有可儲存的內容');
       return;
@@ -1638,7 +1660,7 @@ const App: React.FC = () => {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       title: webTitle || novel?.title || '未命名章節',
       sourceUrl: novel?.sourceUrl || webUrl || '',
-      scrollTop: textarea.scrollTop,
+      scrollTop: main?.scrollTop ?? 0,
       readingCharIndex: typeof readingCharIndex === 'number' ? readingCharIndex : fallbackCharIndex,
       lineNumber,
       savedAt: Date.now(),
@@ -1731,7 +1753,7 @@ const App: React.FC = () => {
         setUseAiReading={setUseAiReading}
       />
 
-      <main className="flex-1 w-full overflow-hidden px-4 md:px-12 lg:px-24">
+      <main ref={mainScrollRef} className="flex-1 w-full overflow-y-auto px-4 md:px-12 lg:px-24">
         <div className="max-w-[90rem] mx-auto pt-6 md:pt-8">
           <div className="space-y-8 pb-48">
             {webError && (
@@ -1783,7 +1805,7 @@ const App: React.FC = () => {
                   fontSize: `${fontSize}px`,
                   paddingBottom: '42vh'
                 }}
-                className={`relative z-20 w-full h-[76vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-y-auto serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
+                className={`relative z-20 w-full min-h-[76vh] bg-transparent border-0 focus:ring-0 leading-[2.2] resize-none overflow-hidden serif-font ${theme === 'sepia' ? 'placeholder:text-[#5b4636]/30' : 'placeholder:opacity-30'}`}
               />
             </div>
           </div>
