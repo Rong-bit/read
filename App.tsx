@@ -2013,7 +2013,9 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
                 { name: '黃金屋', url: 'https://www.hjwzw.com/', c: 'bg-amber-600' },
+                { name: '黃金屋（繁中）', url: 'https://tw.hjwzw.com/', c: 'bg-yellow-700' },
                 { name: '天天看小說', url: 'https://www.ttkan.co/', c: 'bg-sky-600' },
+                { name: '天天看小說（簡中）', url: 'https://cn.ttkan.co/', c: 'bg-cyan-700' },
                 { name: '天天看小說（備用）', url: 'https://www.wa01.com/', c: 'bg-teal-700' }
               ].map(site => (
                 <a key={site.name} href={site.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-5 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all group">
