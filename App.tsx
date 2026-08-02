@@ -2004,7 +2004,7 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center mb-8">
               <div>
                 <h2 className="text-2xl font-bold">瀏覽書源</h2>
-                <p className="text-slate-400 text-sm mt-1">開啟連結搜尋後，將網址貼回首頁進行抓取。</p>
+                <p className="text-slate-400 text-sm mt-1">僅列出目前可雲端抓取的書源。開啟後找到章節頁，再將章節網址貼回首頁抓取。</p>
               </div>
               <button onClick={() => setIsBrowseOpen(false)} className="text-slate-400 hover:text-white">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -2012,11 +2012,9 @@ const App: React.FC = () => {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { name: '番茄小說', url: 'https://fanqienovel.com/', c: 'bg-orange-500' },
-                { name: '起點中文網', url: 'https://www.qidian.com/', c: 'bg-red-600' },
-                { name: '晉江文學城', url: 'https://www.jjwxc.net/', c: 'bg-green-600' },
-                { name: '縱橫中文網', url: 'https://www.zongheng.com/', c: 'bg-blue-600' },
-                { name: '稷下書院', url: 'https://www.novel543.com/', c: 'bg-violet-600' }
+                { name: '黃金屋', url: 'https://www.hjwzw.com/', c: 'bg-amber-600' },
+                { name: '天天看小說', url: 'https://www.ttkan.co/', c: 'bg-sky-600' },
+                { name: '天天看小說（備用）', url: 'https://www.wa01.com/', c: 'bg-teal-700' }
               ].map(site => (
                 <a key={site.name} href={site.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-5 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all group">
                   <div className={`w-12 h-12 rounded-xl ${site.c} flex items-center justify-center text-white font-bold shadow-lg`}>{site.name[0]}</div>
