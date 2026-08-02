@@ -1,261 +1,50 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { NovelContent } from "../types.ts";
-import {
-  canUseTtsChars,
-  recordTtsUsage,
-  TtsQuotaExceededError,
-} from "../utils/ttsQuota.ts";
 
-const resolveApiKey = (): string => {
-  const key = import.meta.env.VITE_API_KEY?.trim();
-  if (!key) {
-    throw new Error("缺少 API Key：請在前端環境變數設定 VITE_API_KEY");
-  }
-  return key;
-};
+import React, { useState } from 'react';
 
-const getAI = () => new GoogleGenAI({ apiKey: resolveApiKey() });
+interface NovelInputProps {
+  onSearch: (input: string) => void;
+  isLoading: boolean;
+}
 
-const getFetchNovelApiUrl = (): string | null => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
-  const fallbackGithubApiBase = 'https://read-kappa-two.vercel.app';
-  // 未設定時保持本地開發行為：走同源 /api/fetch-novel
-  if (!baseUrl) {
-    // GitHub Pages 是靜態託管，沒有後端 /api 可用
-    if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
-      return `${fallbackGithubApiBase}/api/fetch-novel`;
+const NovelInput: React.FC<NovelInputProps> = ({ onSearch, isLoading }) => {
+  const [input, setInput] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim()) {
+      onSearch(input.trim());
     }
-    return '/api/fetch-novel';
-  }
-  return `${baseUrl.replace(/\/+$/, '')}/api/fetch-novel`;
-};
-
-const getTtsApiUrl = (): string => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
-  const fallbackGithubApiBase = 'https://read-kappa-two.vercel.app';
-  if (!baseUrl) {
-    if (typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
-      return `${fallbackGithubApiBase}/api/tts-google`;
-    }
-    return '/api/tts-google';
-  }
-  return `${baseUrl.replace(/\/+$/, '')}/api/tts-google`;
-};
-
-const isLikelyUrlInput = (value: string): boolean => {
-  const raw = value.trim();
-  if (!raw) return false;
-  if (/^https?:\/\//i.test(raw)) return true;
-  if (/\s/.test(raw)) return false;
-  if (!raw.includes('.')) return false;
-  try {
-    const withScheme = `https://${raw}`;
-    const u = new URL(withScheme);
-    return Boolean(u.hostname && u.hostname.includes('.'));
-  } catch {
-    return false;
-  }
-};
-
-const fetchNovelByKeyword = async (keyword: string): Promise<NovelContent> => {
-  const ai = getAI();
-  const prompt = `請搜尋小說「${keyword}」，回傳可直接閱讀的章節全文。
-要求：
-1) 嚴禁摘要，盡量提供完整章節正文。
-2) 若可取得，提供上一章、下一章連結與章節目錄（至少數筆）。
-3) 只輸出 JSON。`;
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      temperature: 0,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          content: { type: Type.STRING },
-          sourceUrl: { type: Type.STRING },
-          nextChapterUrl: { type: Type.STRING },
-          prevChapterUrl: { type: Type.STRING },
-          chapters: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                url: { type: Type.STRING }
-              }
-            }
-          }
-        },
-        required: ["title", "content"]
-      }
-    }
-  });
-
-  const raw = response.text?.trim();
-  if (!raw) {
-    throw new Error('關鍵字搜尋未取得內容，請改用完整章節網址。');
-  }
-  const data = JSON.parse(raw);
-  const content = (data.content || '').trim();
-  if (!content) {
-    throw new Error('關鍵字搜尋未取得章節正文，請改用完整章節網址。');
-  }
-  return {
-    title: data.title || keyword,
-    content,
-    sourceUrl: data.sourceUrl,
-    nextChapterUrl: data.nextChapterUrl,
-    prevChapterUrl: data.prevChapterUrl,
-    chapters: Array.isArray(data.chapters) ? data.chapters : [],
-    groundingSources: response.candidates?.[0]?.groundingMetadata?.groundingChunks
   };
+
+  return (
+    <div className="w-full max-w-3xl mx-auto mt-4 mb-8">
+      <form onSubmit={handleSubmit} className="relative group">
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="貼上章節網址（如黃金屋、天天看）..."
+          className="w-full pl-6 pr-36 py-4 bg-slate-800/50 border border-slate-700 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all placeholder:text-slate-500"
+          disabled={isLoading}
+        />
+        <button
+          type="submit"
+          disabled={isLoading || !input.trim()}
+          className="absolute right-2 top-2 bottom-2 px-5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all active:scale-95 text-sm"
+        >
+          {isLoading ? (
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          )}
+          <span>{isLoading ? '處理中' : '開啟閱讀'}</span>
+        </button>
+      </form>
+      <div className="mt-2 text-center text-[11px] text-slate-500 font-bold uppercase tracking-wider">
+        支援：黃金屋、天天看小說等可雲端抓取的章節網址
+      </div>
+    </div>
+  );
 };
 
-// 驗證 URL 並嘗試從後端取得正文（若後端可用）
-export const fetchNovelContent = async (input: string, currentTitle?: string): Promise<NovelContent> => {
-  try {
-    const originalInput = input.trim();
-    if (!originalInput) throw new Error('請輸入書名或網址');
-    if (!isLikelyUrlInput(originalInput)) {
-      return await fetchNovelByKeyword(originalInput);
-    }
-
-    let url = originalInput;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url;
-    }
-    try {
-      new URL(url);
-    } catch {
-      throw new Error('無效的網址格式');
-    }
-    const title = currentTitle || extractTitleFromUrl(url) || '小說閱讀';
-
-    // 嘗試呼叫後端抓取正文（本機 npm run dev:all 時有效）
-    console.log('開始抓取小說，URL:', url);
-    try {
-      const apiUrl = getFetchNovelApiUrl();
-      if (!apiUrl) {
-        throw new Error('目前為 GitHub Pages 靜態部署，請設定 VITE_API_BASE_URL 指向可用後端 API。');
-      }
-      console.log('發送請求到', apiUrl);
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, currentTitle: title })
-      });
-      console.log('收到響應，狀態:', res.status, res.statusText);
-      if (res.ok) {
-        const data = await res.json();
-        console.log('後端返回數據:', { 
-          title: data.title, 
-          contentLength: data.content?.length, 
-          nextChapterUrl: data.nextChapterUrl 
-        });
-        if (data.content && data.content.length > 0) {
-          return {
-            title: data.title || title,
-            content: data.content,
-            sourceUrl: url,
-            nextChapterUrl: data.nextChapterUrl,
-            prevChapterUrl: data.prevChapterUrl,
-            chapters: data.chapters,
-            groundingSources: undefined
-          };
-        }
-        // 即使沒有內容，也返回 nextChapterUrl 或 prevChapterUrl（如果有）
-        if (data.nextChapterUrl || data.prevChapterUrl || data.chapters) {
-          return {
-            title: data.title || title,
-            content: '',
-            sourceUrl: url,
-            nextChapterUrl: data.nextChapterUrl,
-            prevChapterUrl: data.prevChapterUrl,
-            chapters: data.chapters,
-            groundingSources: undefined
-          };
-        }
-      } else {
-        const errorText = await res.text();
-        console.error('後端返回錯誤:', res.status, errorText);
-      }
-    } catch (error) {
-      // 後端不可用（例如 Vercel 僅前端），繼續使用空 content
-      console.error('呼叫後端失敗:', error);
-    }
-
-    return {
-      title,
-      content: '',
-      sourceUrl: url,
-      groundingSources: undefined
-    };
-  } catch (error: any) {
-    console.error('處理網址失敗:', error);
-    throw new Error(error.message || '無法處理網址，請檢查網址是否正確');
-  }
-};
-
-// 從 URL 提取可能的標題
-const extractTitleFromUrl = (url: string): string => {
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-    
-    // 從常見的小說網站提取書名
-    if (hostname.includes('fanqienovel.com')) {
-      return '番茄小說';
-    } else if (hostname.includes('qidian.com')) {
-      return '起點中文網';
-    } else if (hostname.includes('jjwxc.net')) {
-      return '晉江文學城';
-    } else     if (hostname.includes('zongheng.com')) {
-      return '縱橫中文網';
-    }
-    if (hostname.includes('hjwzw.com')) {
-      return '黃金屋';
-    }
-    return '小說閱讀';
-  } catch {
-    return '小說閱讀';
-  }
-};
-
-export { TtsQuotaExceededError };
-
-export const generateSpeech = async (
-  text: string,
-  voiceName: string = 'Aoede'
-): Promise<string> => {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error('缺少朗讀文字');
-  if (!canUseTtsChars(trimmed.length)) {
-    throw new TtsQuotaExceededError();
-  }
-
-  const apiUrl = getTtsApiUrl();
-  const res = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text: trimmed,
-      voiceName
-    })
-  });
-  if (!res.ok) {
-    const errorText = await res.text();
-    if (res.status === 429) {
-      throw new TtsQuotaExceededError();
-    }
-    throw new Error(`Google Cloud TTS 失敗: ${errorText}`);
-  }
-  const data = await res.json();
-  if (!data.audioBase64) throw new Error('Google Cloud TTS 未回傳音訊');
-  recordTtsUsage(trimmed.length);
-  return data.audioBase64 as string;
-};
+export default NovelInput;
